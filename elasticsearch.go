@@ -14,16 +14,15 @@ import (
 const (
 	mappingTarget = `
 	{
-		"settings":{
-			"number_of_shards": 1,
-			"number_of_replicas": 1
-		},
 		"mappings":{
 			"properties":{
 				"target_name":{
 					"type":"keyword"
 				},
 				"hostname":{
+					"type":"keyword"
+				},
+				"service":{
 					"type":"keyword"
 				}
 			}
@@ -38,15 +37,8 @@ type DB struct {
 }
 
 type Asset struct {
-	TargetName string    `json:"target_name"`
-	Hostname   string    `json:"hostname"`
-	Services   []Service `json:"services"`
-}
-
-type Service struct {
-	Port   int
-	Banner string
-	Data   string
+	TargetName string `json:"target_name"`
+	Hostname   string `json:"hostname"`
 }
 
 func (a Asset) Id() string {
@@ -87,10 +79,11 @@ func (db *DB) ensureIndex(name, mapping string) error {
 	return nil
 }
 
-func (db *DB) Setup() error {
-
-	if err := db.ensureIndex("assets", mappingTarget); err != nil {
-		return err
+func (db *DB) Setup(indices []string) error {
+	for _, indexName := range indices {
+		if err := db.ensureIndex(indexName, mappingTarget); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -117,11 +110,13 @@ func (db *DB) Find(index string, fields map[string]string) (*elastic.SearchResul
 }
 
 func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]interface{}, error) {
-	log.Debugf("[%v] retrieving, filters=%+v\n", index, filter)
+	log.WithFields(
+		log.Fields{"index": index, "filter": filter},
+	).Debug("retrieving docs")
 
 	searchResult, err := db.Find(index, filter)
 	if err != nil {
-		log.Printf("[%v] error: %v", index, err)
+		log.WithFields(log.Fields{"index": index}).Error(err)
 		return nil, err
 	}
 
@@ -137,7 +132,7 @@ func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]int
 		results = append(results, m)
 	}
 
-	log.Debugf("[%v] query took %d milliseconds\n", index, searchResult.TookInMillis)
+	log.WithFields(log.Fields{"index": index}).Debugf("query took %d milliseconds\n", searchResult.TookInMillis)
 
 	return results, nil
 }

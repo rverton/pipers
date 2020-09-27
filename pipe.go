@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -11,8 +12,7 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/emersion/go-imap/client"
-	"github.com/olivere/elastic"
+	"github.com/Masterminds/sprig"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -24,7 +24,9 @@ type Pipe struct {
 	Command string `yaml:"cmd"`
 	Output  string
 	Fields  map[string]string
-	Update  bool
+	Data    map[string]string
+	Ident   string
+	Debug   bool
 }
 
 func (p Pipe) validate() error {
@@ -36,45 +38,82 @@ func (p Pipe) validate() error {
 }
 
 func (p Pipe) prepareCommand(input map[string]interface{}) (*exec.Cmd, error) {
-	tmpl, err := template.New("cmd").Parse(p.Command)
-	if err != nil {
-		return nil, err
+	tplData := map[string]interface{}{
+		"input": input,
 	}
 
-	var b bytes.Buffer
-	err = tmpl.Execute(&b, input)
+	s, err := Tpl(p.Command, tplData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not prepare command: %v", err)
 	}
 
-	return exec.Command("bash", "-c", b.String()), nil
+	return exec.Command("bash", "-c", s), nil
 }
 
-func (p Pipe) outputMap(input map[string]interface{}, output string) map[string]interface{} {
-	tplData := map[string]interface{}{
-		"input":  input,
-		"output": output,
+func Tpl(templateBody string, data map[string]interface{}) (string, error) {
+	var b bytes.Buffer
+
+	tmpl, err := template.New("result").Funcs(sprig.TxtFuncMap()).Parse(templateBody)
+	if err != nil {
+		return "", fmt.Errorf("cant create template for: %v", err)
 	}
 
+	err = tmpl.Execute(&b, data)
+	if err != nil {
+		return "", fmt.Errorf("cant create output map: %v", err)
+	}
+
+	return b.String(), nil
+
+}
+
+func generateTemplateData(input map[string]interface{}, output []byte) map[string]interface{} {
+	// try to parse as json, ignore if it fails
+	var outputJson map[string]interface{}
+	json.Unmarshal(output, &outputJson)
+
+	return map[string]interface{}{
+		"input":      input,
+		"output":     string(output),
+		"outputJson": outputJson,
+	}
+}
+
+func (p Pipe) generateIdent(tplData map[string]interface{}) (string, error) {
+	if p.Ident == "" {
+		return "", fmt.Errorf("ident field is empty")
+	}
+
+	return Tpl(p.Ident, tplData)
+}
+
+func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	doc := make(map[string]interface{})
+	data := make(map[string]interface{})
 
 	for name, val := range p.Fields {
-		tmpl, err := template.New("result").Parse(val)
+		s, err := Tpl(val, tplData)
 		if err != nil {
-			log.Errorf("cant create template for '%v': %v", val, err)
+			log.WithFields(log.Fields{"template": val}).Errorf("cant create template: %v", err)
 			continue
 		}
 
-		var b bytes.Buffer
-
-		err = tmpl.Execute(&b, tplData)
-		if err != nil {
-			log.Errorf("cant create output map: %v", err)
-			continue
-		}
-
-		doc[name] = b.String()
+		doc[name] = s
 	}
+
+	for name, val := range p.Data {
+		s, err := Tpl(val, tplData)
+		if err != nil {
+			log.WithFields(log.Fields{"template": val}).Errorf("cant create template: %v", err)
+			continue
+		}
+
+		data[name] = s
+	}
+
+	dataKey := fmt.Sprintf("data.%v", p.Name)
+
+	doc[dataKey] = data
 
 	return doc
 }
@@ -102,50 +141,68 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 
 	cmd, err := p.prepareCommand(inputData)
 
-	log.Debugf("executing %v", cmd.String())
-
 	if err != nil {
-		return fmt.Errorf("error preparing pipe command: %v\n", err)
+		return fmt.Errorf("cant prepare pipe command: %v\n", err)
 	}
+
+	log.WithFields(log.Fields{
+		"cmd": cmd.String(),
+	}).Debug("executing")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("error executing pipe command: %v\n", err)
+		return fmt.Errorf("cant execute pipe command: %v\n", err)
 	}
 
 	err = cmd.Start()
 	if err != nil {
-		return fmt.Errorf("error executing pipe command: %v\n", err)
+		return fmt.Errorf("cant execute pipe command: %v\n", err)
 	}
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		result := p.outputMap(inputData, scanner.Text())
+		tplData := generateTemplateData(inputData, scanner.Bytes())
 
-		fmt.Printf("result: %+v\n", result)
+		result := p.outputMap(tplData)
 
-		if p.Update {
+		id, err := p.generateIdent(tplData)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
 
-			update, err := client.Update().Index("assets").Id(result["_id"]).
-				Script(elastic.NewScriptInline("ctx._source.retweets += params.num").Lang("painless").Param("num", 1)).
-				Upsert(map[string]interface{}{"retweets": 0}).
-				Do(ctx)
-			if err != nil {
-				// Handle error
-				panic(err)
-			}
+		if id == "" {
+			log.WithFields(log.Fields{
+				"pipe":       p.Name,
+				"identField": p.Ident,
+			}).Error("resulting ident is empty, skipping")
+			continue
+		}
 
-		} else {
-			put, err := db.Client.Index().
-				Index("assets").
-				//Type(p.Output).
-				BodyJson(result).
-				Do(db.ctx)
-			if err != nil {
-				return fmt.Errorf("cant index doc: %v", err)
-			}
+		if p.Debug {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": id,
+			}).Infof("pipe debug: %+v", result)
 
-			log.Debugf("indexed %v", put.Id)
+			continue
+		}
+
+		upsert, err := db.Client.Update().
+			Index(p.Output).
+			Id(id).
+			Doc(result).
+			DocAsUpsert(true).
+			Do(db.ctx)
+		if err != nil {
+			return fmt.Errorf("cant upsert doc: %v", err)
+		}
+
+		if upsert.Result == "created" {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": id,
+			}).Infof("new entry")
 		}
 	}
 

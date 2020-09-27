@@ -2,9 +2,10 @@ name: domains
 input: assets
 filter:
   scope: true
-cmd: assetfinder -subs-only {{.hostname}}
-output: asset
+cmd: assetfinder -subs-only {{.input.hostname}}
+output: assets
 fields:
   target_name: "{{.input.target_name}}"
   scope: false
   hostname: "{{.output}}"
+ident: "{{.output}}"

@@ -1,6 +1,0 @@
-name: ports
-input: assets
-cmd: "echo {{.hostname}}:1234"
-output: assets
-fields:
-  services: "{{.output}}"
