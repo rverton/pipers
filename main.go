@@ -44,7 +44,7 @@ func main() {
 	for _, p := range pipes {
 		wg.Add(1)
 
-		log.WithFields(log.Fields{"pipe": p.Name}).Info("starting")
+		log.WithFields(log.Fields{"pipe": p.Name, "interval": p.Interval}).Info("loading")
 		go p.run(db, &wg)
 	}
 

@@ -11,27 +11,42 @@ import (
 	"path"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
+const INTERVAL_DEFAULT = "24h"
+
 type Pipe struct {
-	Name    string
-	Input   string
-	Filter  map[string]string
-	Command string `yaml:"cmd"`
-	Output  string
-	Fields  map[string]string
-	Data    map[string]string
-	Ident   string
-	Debug   bool
+	Name     string
+	Input    string
+	Filter   map[string]string
+	Command  string `yaml:"cmd"`
+	Output   string
+	Fields   map[string]string
+	Data     map[string]string
+	Ident    string
+	Interval string // time.Duration format
+	Debug    bool
+}
+
+func (p Pipe) interval() (time.Duration, error) {
+	if p.Interval == "" {
+		p.Interval = INTERVAL_DEFAULT
+	}
+	return time.ParseDuration(p.Interval)
 }
 
 func (p Pipe) validate() error {
-	if p.Input != "assets" {
+	if p.Input != "assets" && p.Input != "results" {
 		return fmt.Errorf("invalid input: %v", p.Input)
+	}
+
+	if _, err := p.interval(); err != nil {
+		return fmt.Errorf("invalid date interval: %w", err)
 	}
 
 	return nil
@@ -121,19 +136,28 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 func (p Pipe) run(db *DB, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	// retrieve (filtered) input
-	data, err := db.retrieve(p.Input, p.Filter)
-	if err != nil {
-		log.Errorf("could not retrieve input: %v", err)
-		return
-	}
+	for {
+		log.WithFields(log.Fields{
+			"pipe": p.Name,
+		}).Debugf("running")
 
-	// execute cmd for each input
-	for _, d := range data {
-		// TODO: this should be handled in a queue
-		if err := p.handle(d, db); err != nil {
-			log.Errorf("error handling output: %v", err)
+		// retrieve (filtered) input
+		data, err := db.retrieve(p.Input, p.Filter)
+		if err != nil {
+			log.Errorf("could not retrieve input: %v", err)
+			break
 		}
+
+		// execute cmd for each input
+		for _, d := range data {
+			// TODO: this should be handled in a queue
+			if err := p.handle(d, db); err != nil {
+				log.Errorf("error handling output: %v", err)
+			}
+		}
+
+		duration, _ := p.interval()
+		time.Sleep(duration)
 	}
 }
 
@@ -179,6 +203,7 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 			continue
 		}
 
+		// only print output in debug mode
 		if p.Debug {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
@@ -188,25 +213,36 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 			continue
 		}
 
-		upsert, err := db.Client.Update().
-			Index(p.Output).
-			Id(id).
-			Doc(result).
-			DocAsUpsert(true).
-			Do(db.ctx)
-		if err != nil {
-			return fmt.Errorf("cant upsert doc: %v", err)
-		}
-
-		if upsert.Result == "created" {
+		if err := p.save(id, result, db); err != nil {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
 				"ident": id,
-			}).Infof("new entry")
+			}).Errorf("unable to save: %w", err)
 		}
 	}
 
 	cmd.Wait()
+
+	return nil
+}
+
+func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
+	upsert, err := db.Client.Update().
+		Index(p.Output).
+		Id(id).
+		Doc(result).
+		DocAsUpsert(true).
+		Do(db.ctx)
+	if err != nil {
+		return fmt.Errorf("cant upsert doc: %v", err)
+	}
+
+	if upsert.Result == "created" {
+		log.WithFields(log.Fields{
+			"pipe":  p.Name,
+			"ident": id,
+		}).Infof("new entry")
+	}
 
 	return nil
 }

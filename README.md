@@ -46,4 +46,5 @@ fields:
   scope: false
   hostname: ${.output}
 ident: ${.output}
+interval: 12h
 ```
