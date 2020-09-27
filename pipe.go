@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig"
+	"github.com/hibiken/asynq"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -133,7 +134,7 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return doc
 }
 
-func (p Pipe) run(db *DB, wg *sync.WaitGroup) {
+func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
@@ -148,11 +149,18 @@ func (p Pipe) run(db *DB, wg *sync.WaitGroup) {
 			break
 		}
 
-		// execute cmd for each input
 		for _, d := range data {
-			// TODO: this should be handled in a queue
-			if err := p.handle(d, db); err != nil {
-				log.Errorf("error handling output: %v", err)
+
+			// enqueue task
+			if err := enqueuePipe(p, d, client); err != nil {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+				}).Errorf("enqueueing failed: %w", err)
+			} else {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+					"data": d,
+				}).Debug("enqueued")
 			}
 		}
 
@@ -162,7 +170,6 @@ func (p Pipe) run(db *DB, wg *sync.WaitGroup) {
 }
 
 func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
-
 	cmd, err := p.prepareCommand(inputData)
 
 	if err != nil {
