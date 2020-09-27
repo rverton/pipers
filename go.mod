@@ -8,6 +8,7 @@ require (
 	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/coocood/freecache v1.1.1 // indirect
 	github.com/google/uuid v1.1.2 // indirect
+	github.com/hibiken/asynq v0.12.0
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
