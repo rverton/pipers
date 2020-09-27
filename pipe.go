@@ -53,7 +53,7 @@ func (p Pipe) prepareCommand(input map[string]interface{}) (*exec.Cmd, error) {
 func Tpl(templateBody string, data map[string]interface{}) (string, error) {
 	var b bytes.Buffer
 
-	tmpl, err := template.New("result").Funcs(sprig.TxtFuncMap()).Parse(templateBody)
+	tmpl, err := template.New("result").Delims("${", "}").Funcs(sprig.TxtFuncMap()).Parse(templateBody)
 	if err != nil {
 		return "", fmt.Errorf("cant create template for: %v", err)
 	}
