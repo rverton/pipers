@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/hibiken/asynq"
 
@@ -11,6 +12,7 @@ import (
 )
 
 const TASK_PIPE = "pipe:handle"
+const TASK_LOCK = time.Hour * 24
 
 func enqueuePipe(p Pipe, data map[string]interface{}, client *asynq.Client) error {
 	m := make(map[string]interface{})
@@ -19,7 +21,7 @@ func enqueuePipe(p Pipe, data map[string]interface{}, client *asynq.Client) erro
 	m["data"] = data
 	m["pipe"] = string(pipeBytes)
 
-	_, err := client.Enqueue(asynq.NewTask(TASK_PIPE, m))
+	_, err := client.Enqueue(asynq.NewTask(TASK_PIPE, m), asynq.Unique(TASK_LOCK))
 	return err
 }
 

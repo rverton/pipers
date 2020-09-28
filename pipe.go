@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -153,9 +154,15 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 
 			// enqueue task
 			if err := enqueuePipe(p, d, client); err != nil {
-				log.WithFields(log.Fields{
-					"pipe": p.Name,
-				}).Errorf("enqueueing failed: %w", err)
+				if errors.Is(err, asynq.ErrDuplicateTask) {
+					log.WithFields(log.Fields{
+						"pipe": p.Name,
+					}).Info("enqueueing skipped, task already enqueued")
+				} else {
+					log.WithFields(log.Fields{
+						"pipe": p.Name,
+					}).Errorf("enqueueing failed: %v", err)
+				}
 			} else {
 				log.WithFields(log.Fields{
 					"pipe": p.Name,
