@@ -23,20 +23,6 @@ func enqueuePipe(p Pipe, data map[string]interface{}, client *asynq.Client) erro
 	return err
 }
 
-func loggingMiddleware(h asynq.Handler) asynq.Handler {
-	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-		log.Println("before")
-		err := h.ProcessTask(ctx, t)
-		if err != nil {
-			log.Errorf("task execution failed: %v", err)
-			return err
-		}
-		log.Println("after")
-		//log.Printf("finished %q: Elapsed Time = %v", t.Type, time.Since(start))
-		return nil
-	})
-}
-
 func handler(ctx context.Context, t *asynq.Task) error {
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
@@ -64,4 +50,14 @@ func handler(ctx context.Context, t *asynq.Task) error {
 	}
 
 	return nil
+}
+
+func queueErrorHandler(ctx context.Context, task *asynq.Task, err error) {
+	retried, _ := asynq.GetRetryCount(ctx)
+	maxRetry, _ := asynq.GetMaxRetry(ctx)
+	if retried >= maxRetry {
+		// retry exhausted
+		err = fmt.Errorf("retry exhausted for task %s: %w", task.Type, err)
+	}
+	log.Errorf("handling queue task failed: %v\n", err)
 }

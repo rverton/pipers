@@ -248,7 +248,7 @@ func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
 		log.WithFields(log.Fields{
 			"pipe":  p.Name,
 			"ident": id,
-		}).Infof("new entry")
+		}).Infof("created document")
 	}
 
 	return nil

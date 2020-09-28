@@ -29,19 +29,22 @@ func indices(pipes []Pipe) []string {
 	return i
 }
 
+// worker will use asynq and redis to listen for pipe tasks to be handled
 func worker() error {
 	opts := asynq.RedisClientOpt{Addr: "localhost:6379"}
 	srv := asynq.NewServer(opts, asynq.Config{
-		Concurrency: WORKER,
+		Concurrency:  WORKER,
+		ErrorHandler: asynq.ErrorHandlerFunc(queueErrorHandler),
+		Logger:       log.StandardLogger(),
 	})
 
 	mux := asynq.NewServeMux()
-	mux.Use(loggingMiddleware)
 	mux.HandleFunc(TASK_PIPE, handler)
 
 	return srv.Run(mux)
 }
 
+// scheduler will load all pipes and add tasks to a queue
 func scheduler() error {
 	var err error
 
