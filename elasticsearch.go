@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -24,6 +24,9 @@ const (
 				},
 				"service":{
 					"type":"keyword"
+				},
+				"created":{
+					"type":"date"
 				}
 			}
 		}
@@ -37,12 +40,19 @@ type DB struct {
 }
 
 type Asset struct {
-	TargetName string `json:"target_name"`
-	Hostname   string `json:"hostname"`
+	TargetName string    `json:"target_name"`
+	Hostname   string    `json:"hostname"`
+	Created    time.Time `json:"created"`
 }
 
-func (a Asset) Id() string {
-	return fmt.Sprintf("%x", md5.Sum([]byte(a.Hostname)))
+type Alert struct {
+	Name    string                 `json:"name"`
+	Data    map[string]interface{} `json:"data"`
+	Created time.Time              `json:"created"`
+
+	// back reference to original entry
+	DocId    string `json:"doc_id"`
+	DocIndex string `json:"doc_index"`
 }
 
 func NewDB() (*DB, error) {
@@ -80,6 +90,8 @@ func (db *DB) ensureIndex(name, mapping string) error {
 }
 
 func (db *DB) Setup(indices []string) error {
+	indices = append(indices, "alerts")
+
 	for _, indexName := range indices {
 		if err := db.ensureIndex(indexName, mappingTarget); err != nil {
 			return err

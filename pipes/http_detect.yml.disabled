@@ -13,4 +13,4 @@ data:
   title: ${.outputJson.title}
   response: ${.outputJson.serverResponse}
   status: ${index .outputJson "status-code"}
-interval: 1m
+interval: 12h

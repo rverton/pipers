@@ -9,7 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"sync"
 	"text/template"
 	"time"
@@ -241,6 +241,8 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 }
 
 func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
+	result["created"] = time.Now()
+
 	upsert, err := db.Client.Update().
 		Index(p.Output).
 		Id(id).
@@ -252,13 +254,34 @@ func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
 	}
 
 	if upsert.Result == "created" {
-		log.WithFields(log.Fields{
-			"pipe":  p.Name,
-			"ident": id,
-		}).Infof("created document")
+		if err := createAlert(db, p, result, id, "CREATED"); err != nil {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": id,
+			}).Errorf("cant create alert: %v", err)
+		}
 	}
 
 	return nil
+}
+
+func createAlert(db *DB, pipe Pipe, data map[string]interface{}, id, name string) error {
+	log.WithFields(log.Fields{
+		"pipe":  pipe.Name,
+		"ident": id,
+	}).Infof("created document")
+
+	alert := Alert{
+		Name:     name,
+		DocIndex: pipe.Output,
+		DocId:    id,
+		Data:     data,
+		Created:  time.Now(),
+	}
+
+	_, err := db.Client.Index().Index("alerts").BodyJson(alert).Do(db.ctx)
+
+	return err
 }
 
 func loadPipe(filename string) (Pipe, error) {
@@ -280,20 +303,19 @@ func loadPipe(filename string) (Pipe, error) {
 	return pipe, nil
 }
 
-func loadPipes(folder string) ([]Pipe, error) {
+func loadPipes(glob string) ([]Pipe, error) {
 	var pipes []Pipe
 	var err error
 
-	files, err := ioutil.ReadDir(folder)
+	files, err := filepath.Glob(glob)
 	if err != nil {
 		return pipes, err
 	}
 
 	for _, f := range files {
-		fname := path.Join(folder, f.Name())
-		p, err := loadPipe(fname)
+		p, err := loadPipe(f)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error loading %v: %v\n", fname, err)
+			fmt.Fprintf(os.Stderr, "error loading %v: %v\n", f, err)
 			continue
 		}
 

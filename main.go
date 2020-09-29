@@ -48,7 +48,7 @@ func worker() error {
 func scheduler() error {
 	var err error
 
-	pipes, err := loadPipes("./pipes/")
+	pipes, err := loadPipes("./pipes/*.yml")
 	if err != nil {
 		return err
 	}
