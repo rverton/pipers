@@ -5,7 +5,9 @@ import (
 	"sync"
 
 	"github.com/hibiken/asynq"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/sohlich/elogrus.v7"
 )
 
 const WORKER = 4
@@ -85,6 +87,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	hook, err := elogrus.NewAsyncElasticHook(db.Client, "localhost", logrus.DebugLevel, "log")
+	if err != nil {
+		log.Panic(err)
+	}
+	log.AddHook(hook)
 
 	if *workerMode {
 		log.Info("starting worker")

@@ -32,5 +32,6 @@ require (
 	golang.org/x/sys v0.0.0-20200926100807-9d91bd62050c // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	gopkg.in/ini.v1 v1.61.0 // indirect
+	gopkg.in/sohlich/elogrus.v7 v7.0.0 // indirect
 	gopkg.in/yaml.v2 v2.3.0
 )
