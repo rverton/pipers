@@ -88,7 +88,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	hook, err := elogrus.NewAsyncElasticHook(db.Client, "localhost", logrus.DebugLevel, "log")
+	hook, err := elogrus.NewBulkProcessorElasticHook(db.Client, "localhost", logrus.DebugLevel, "log")
 	if err != nil {
 		log.Panic(err)
 	}

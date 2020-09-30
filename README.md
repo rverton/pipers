@@ -8,6 +8,12 @@ Define single pipes in yaml files and chain them.
 * each input is passed to a command, each output is then persisted
 * each output can specify an `ident` so new entries can be detected
 
+## Features
+
+* Queueing
+* Task uniqueness guaranteed (same task/pipe + data cant be executed at the same time twice)
+* Logs are persisted in elasticsearch
+
 ## Pipe definition
 * the complete output is available under `${.output}`. If it is json, it is available under `${.outputJson}`
 
