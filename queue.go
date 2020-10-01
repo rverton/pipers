@@ -28,12 +28,12 @@ func enqueuePipe(p Pipe, data map[string]interface{}, client *asynq.Client) erro
 func handler(ctx context.Context, t *asynq.Task) error {
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
-		log.Errorf("getting task payload failed: %w", err)
+		log.Errorf("getting task payload failed: %v", err)
 		return err
 	}
 	data, err := t.Payload.GetStringMap("data")
 	if err != nil {
-		log.Errorf("getting task payload failed: %w", err)
+		log.Errorf("getting task payload failed: %v", err)
 		return err
 	}
 
@@ -47,7 +47,7 @@ func handler(ctx context.Context, t *asynq.Task) error {
 	if err := p.handle(data, db); err != nil {
 		log.WithFields(log.Fields{
 			"pipe": p.Name,
-		}).Errorf("pipe handle failed: %w", err)
+		}).Errorf("pipe handle failed: %v", err)
 		return err
 	}
 

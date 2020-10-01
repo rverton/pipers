@@ -91,6 +91,7 @@ func (db *DB) ensureIndex(name, mapping string) error {
 
 func (db *DB) Setup(indices []string) error {
 	indices = append(indices, "alerts")
+	indices = append(indices, "results")
 
 	for _, indexName := range indices {
 		if err := db.ensureIndex(indexName, mappingTarget); err != nil {
@@ -140,6 +141,8 @@ func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]int
 		if err != nil {
 			return results, err
 		}
+
+		m = unflat(m)
 
 		results = append(results, m)
 	}

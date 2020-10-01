@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -35,6 +36,32 @@ type Pipe struct {
 	Debug    bool
 }
 
+func unflat(m map[string]interface{}) map[string]interface{} {
+	unflatted := make(map[string]interface{})
+
+	for k, v := range m {
+
+		if strings.Contains(k, ".") {
+
+			split := strings.SplitN(k, ".", 2)
+
+			if _, ok := unflatted[split[0]]; !ok {
+				unflatted[split[0]] = make(map[string]interface{})
+			}
+
+			tmp := unflatted[split[0]].(map[string]interface{})
+			tmp[split[1]] = v
+
+			unflatted[split[0]] = tmp
+
+		} else {
+			unflatted[k] = v
+		}
+	}
+
+	return unflatted
+}
+
 func (p Pipe) interval() (time.Duration, error) {
 	if p.Interval == "" {
 		p.Interval = INTERVAL_DEFAULT
@@ -43,7 +70,7 @@ func (p Pipe) interval() (time.Duration, error) {
 }
 
 func (p Pipe) validate() error {
-	if p.Input != "assets" && p.Input != "results" {
+	if p.Input != "assets" && p.Input != "services" && p.Input != "results" {
 		return fmt.Errorf("invalid input: %v", p.Input)
 	}
 
@@ -231,11 +258,15 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
 				"ident": id,
-			}).Errorf("unable to save: %w", err)
+			}).Errorf("unable to save: %v", err)
 		}
 	}
 
-	cmd.Wait()
+	if err := cmd.Wait(); err != nil {
+		log.WithFields(log.Fields{
+			"pipe": p.Name,
+		}).Errorf("pipe command failed: %v", err)
+	}
 
 	return nil
 }

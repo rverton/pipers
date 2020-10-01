@@ -10,7 +10,7 @@ import (
 	"gopkg.in/sohlich/elogrus.v7"
 )
 
-const WORKER = 4
+const WORKER = 3
 
 var db *DB
 
