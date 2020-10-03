@@ -32,29 +32,44 @@ func indices(pipes []Pipe) []string {
 }
 
 // worker will use asynq and redis to listen for pipe tasks to be handled
-func worker() error {
+// a server is started for each pipe with a specific queue
+func startWorker(pipes []Pipe) {
+	var wg sync.WaitGroup
 	opts := asynq.RedisClientOpt{Addr: "localhost:6379"}
-	srv := asynq.NewServer(opts, asynq.Config{
-		Concurrency:  WORKER,
-		ErrorHandler: asynq.ErrorHandlerFunc(queueErrorHandler),
-		Logger:       log.StandardLogger(),
-	})
 
-	mux := asynq.NewServeMux()
-	mux.HandleFunc(TASK_PIPE, handler)
+	for _, p := range pipes {
+		if p.Worker <= 0 {
+			p.Worker = 1
+		}
 
-	return srv.Run(mux)
+		log.WithFields(log.Fields{"pipe": p.Name, "worker": p.Worker}).Debug("starting queue")
+
+		srv := asynq.NewServer(opts, asynq.Config{
+			Concurrency:  p.Worker,
+			ErrorHandler: asynq.ErrorHandlerFunc(queueErrorHandler),
+			Logger:       log.StandardLogger(),
+			Queues: map[string]int{
+				p.Name: 1,
+			},
+		})
+
+		mux := asynq.NewServeMux()
+		mux.HandleFunc(TASK_PIPE, handler)
+
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			if err := srv.Run(mux); err != nil {
+				log.Errorf("queue worker failed: %v", err)
+			}
+			wg.Done()
+		}(&wg)
+	}
+
+	wg.Wait()
 }
 
 // scheduler will load all pipes and add tasks to a queue
-func scheduler() error {
-	var err error
-
-	pipes, err := loadPipes("./pipes/*.yml")
-	if err != nil {
-		return err
-	}
-
+func scheduler(pipes []Pipe) error {
 	if err := db.Setup(indices(pipes)); err != nil {
 		return err
 	}
@@ -76,10 +91,12 @@ func scheduler() error {
 
 func main() {
 	var err error
+	var pipes []Pipe
 
 	log.SetLevel(log.DebugLevel)
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
+	single := flag.String("single", "", "path of a single pipe to execute")
 	flag.Parse()
 
 	// make DB available global
@@ -94,12 +111,28 @@ func main() {
 	}
 	log.AddHook(hook)
 
+	if *single == "" {
+		pipes, err = loadPipes("./pipes/*.yml")
+		if err != nil {
+			log.Panic(err)
+		}
+	} else {
+		pipe, err := loadPipe(*single)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		pipes = append(pipes, pipe)
+	}
+
 	if *workerMode {
 		log.Info("starting worker")
-		log.Error(worker())
+		startWorker(pipes)
 		return
 	}
 
 	log.Info("starting scheduler")
-	log.Error(scheduler())
+	if err := scheduler(pipes); err != nil {
+		log.Error(err)
+	}
 }

@@ -34,6 +34,7 @@ type Pipe struct {
 	Ident    string
 	Interval string // time.Duration format
 	Debug    bool
+	Worker   int
 }
 
 func unflat(m map[string]interface{}) map[string]interface{} {

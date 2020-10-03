@@ -12,6 +12,7 @@ Define single pipes in yaml files and chain them.
 
 * Queueing
 * Task uniqueness guaranteed (same task/pipe + data cant be executed at the same time twice)
+* Maximum amount of workers per pipe configurable
 * Logs are persisted in elasticsearch
 
 ## Pipe definition
