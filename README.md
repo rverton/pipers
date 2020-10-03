@@ -54,4 +54,5 @@ fields:
   hostname: ${.output}
 ident: ${.output}
 interval: 12h
+worker: 2
 ```

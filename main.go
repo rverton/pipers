@@ -19,8 +19,8 @@ var db *DB
 func indices(pipes []Pipe) []string {
 	indexMap := make(map[string]struct{})
 	for _, p := range pipes {
-		indexMap[p.Input] = struct{}{}
-		indexMap[p.Output] = struct{}{}
+		indexMap[p.Input.Index] = struct{}{}
+		indexMap[p.Output.Index] = struct{}{}
 	}
 
 	var i []string

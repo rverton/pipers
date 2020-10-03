@@ -1,12 +1,14 @@
 name: domains
-input: assets
-filter:
-  scope: true
+input:
+  index: assets
+  filter:
+    scope: true
 cmd: cd /Users/robin/development/projects/bountyhunter-tools && echo ${.input.hostname} | ./assets | cut -d' ' -f1
-output: assets
-fields:
-  target_name: ${.input.target_name}
-  hostname: ${.output}
-ident: ${.output}
+output:
+  index: assets
+  ident: ${.output}
+  fields:
+    target_name: ${.input.target_name}
+    hostname: ${.output}
 interval: 24h
 worker: 1

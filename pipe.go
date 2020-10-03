@@ -24,14 +24,18 @@ import (
 const INTERVAL_DEFAULT = "24h"
 
 type Pipe struct {
-	Name     string
-	Input    string
-	Filter   map[string]string
-	Command  string `yaml:"cmd"`
-	Output   string
-	Fields   map[string]string
-	Data     map[string]string
-	Ident    string
+	Name  string
+	Input struct {
+		Index  string
+		Filter map[string]string
+	}
+	Command string `yaml:"cmd"`
+	Output  struct {
+		Index  string
+		Ident  string
+		Fields map[string]string
+		Data   map[string]string
+	}
 	Interval string // time.Duration format
 	Debug    bool
 	Worker   int
@@ -63,6 +67,15 @@ func unflat(m map[string]interface{}) map[string]interface{} {
 	return unflatted
 }
 
+func keys(m map[string]interface{}) []string {
+	var s []string
+	for k, _ := range m {
+		s = append(s, k)
+	}
+	return s
+
+}
+
 func (p Pipe) interval() (time.Duration, error) {
 	if p.Interval == "" {
 		p.Interval = INTERVAL_DEFAULT
@@ -71,7 +84,8 @@ func (p Pipe) interval() (time.Duration, error) {
 }
 
 func (p Pipe) validate() error {
-	if p.Input != "assets" && p.Input != "services" && p.Input != "results" {
+	idx := p.Input.Index
+	if idx != "assets" && idx != "services" && idx != "results" {
 		return fmt.Errorf("invalid input: %v", p.Input)
 	}
 
@@ -125,18 +139,18 @@ func generateTemplateData(input map[string]interface{}, output []byte) map[strin
 }
 
 func (p Pipe) generateIdent(tplData map[string]interface{}) (string, error) {
-	if p.Ident == "" {
+	if p.Output.Ident == "" {
 		return "", fmt.Errorf("ident field is empty")
 	}
 
-	return Tpl(p.Ident, tplData)
+	return Tpl(p.Output.Ident, tplData)
 }
 
 func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	doc := make(map[string]interface{})
 	data := make(map[string]interface{})
 
-	for name, val := range p.Fields {
+	for name, val := range p.Output.Fields {
 		s, err := Tpl(val, tplData)
 		if err != nil {
 			log.WithFields(log.Fields{"template": val}).Errorf("cant create template: %v", err)
@@ -146,7 +160,7 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 		doc[name] = s
 	}
 
-	for name, val := range p.Data {
+	for name, val := range p.Output.Data {
 		s, err := Tpl(val, tplData)
 		if err != nil {
 			log.WithFields(log.Fields{"template": val}).Errorf("cant create template: %v", err)
@@ -172,7 +186,7 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 		}).Debugf("running")
 
 		// retrieve (filtered) input
-		data, err := db.retrieve(p.Input, p.Filter)
+		data, err := db.retrieve(p.Input.Index, p.Input.Filter)
 		if err != nil {
 			log.Errorf("could not retrieve input: %v", err)
 			break
@@ -193,8 +207,8 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 				}
 			} else {
 				log.WithFields(log.Fields{
-					"pipe": p.Name,
-					"data": d,
+					"pipe":     p.Name,
+					"dataKeys": keys(d),
 				}).Debug("enqueued")
 			}
 		}
@@ -240,7 +254,7 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 		if id == "" {
 			log.WithFields(log.Fields{
 				"pipe":       p.Name,
-				"identField": p.Ident,
+				"identField": p.Output.Ident,
 			}).Error("resulting ident is empty, skipping")
 			continue
 		}
@@ -276,7 +290,7 @@ func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
 	result["created"] = time.Now()
 
 	upsert, err := db.Client.Update().
-		Index(p.Output).
+		Index(p.Output.Index).
 		Id(id).
 		Doc(result).
 		DocAsUpsert(true).
@@ -305,7 +319,7 @@ func createAlert(db *DB, pipe Pipe, data map[string]interface{}, id, name string
 
 	alert := Alert{
 		Name:     name,
-		DocIndex: pipe.Output,
+		DocIndex: pipe.Output.Index,
 		DocId:    id,
 		Data:     data,
 		Created:  time.Now(),
