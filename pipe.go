@@ -23,6 +23,8 @@ import (
 
 const INTERVAL_DEFAULT = "24h"
 
+var SCHEDULER_SLEEP = time.Minute * 10
+
 type Pipe struct {
 	Name  string
 	Input struct {
@@ -194,6 +196,27 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 
 		for _, d := range data {
 
+			inputId := d["_id"].(string)
+			delete(d, "id")
+
+			// ensure last task execution is long enough
+			var found bool
+			if found, err = db.lastTaskLongEnough(p, inputId); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"error": err,
+				}).Error("get last task")
+				continue
+			}
+
+			if found {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+					"id":   inputId,
+				}).Debug("task too recent, skipping")
+				continue
+			}
+
 			// enqueue task
 			if err := enqueuePipe(p, d, client); err != nil {
 				if errors.Is(err, asynq.ErrDuplicateTask) {
@@ -211,10 +234,24 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 					"dataKeys": keys(d),
 				}).Debug("enqueued")
 			}
+
+			// add task doc
+			t := &Task{
+				Pipe:    p.Name,
+				Ident:   inputId,
+				Created: time.Now(),
+			}
+			if _, err := db.Client.Index().Index("tasks").BodyJson(t).Do(db.ctx); err != nil {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+					"err":  err,
+				}).Error("task save")
+			}
+
 		}
 
 		duration, _ := p.interval()
-		time.Sleep(duration)
+		time.Sleep(SCHEDULER_SLEEP)
 	}
 }
 

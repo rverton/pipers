@@ -25,6 +25,9 @@ const (
 				"service":{
 					"type":"keyword"
 				},
+				"ident":{
+					"type":"keyword"
+				},
 				"created":{
 					"type":"date"
 				}
@@ -53,6 +56,13 @@ type Alert struct {
 	// back reference to original entry
 	DocId    string `json:"doc_id"`
 	DocIndex string `json:"doc_index"`
+}
+
+type Task struct {
+	Pipe  string `json:"pipe"`
+	Ident string `json:"ident"`
+
+	Created time.Time `json:"created"`
 }
 
 func NewDB() (*DB, error) {
@@ -92,6 +102,7 @@ func (db *DB) ensureIndex(name, mapping string) error {
 func (db *DB) Setup(indices []string) error {
 	indices = append(indices, "alerts")
 	indices = append(indices, "results")
+	indices = append(indices, "tasks")
 
 	for _, indexName := range indices {
 		if err := db.ensureIndex(indexName, mappingTarget); err != nil {
@@ -122,6 +133,29 @@ func (db *DB) Find(index string, fields map[string]string) (*elastic.SearchResul
 
 }
 
+func dumpQuery(q interface{}) {
+	b, _ := json.MarshalIndent(q, " ", " ")
+	fmt.Println(string(b))
+}
+
+func (db *DB) lastTaskLongEnough(pipe Pipe, id string) (bool, error) {
+	query := elastic.NewBoolQuery().
+		Must(elastic.NewTermQuery("pipe", pipe.Name)).
+		Must(elastic.NewTermQuery("ident", id)).
+		Must(elastic.NewRangeQuery("created").Gte(fmt.Sprintf("now-%v", pipe.Interval)))
+
+	searchResult, err := db.Client.Search().
+		Index("tasks").
+		Size(1).
+		Query(query).
+		Do(db.ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return searchResult.TotalHits() > 0, nil
+}
+
 func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]interface{}, error) {
 	log.WithFields(
 		log.Fields{"index": index, "filter": filter},
@@ -141,6 +175,8 @@ func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]int
 		if err != nil {
 			return results, err
 		}
+
+		m["_id"] = hit.Id
 
 		m = unflat(m)
 
