@@ -1,0 +1,14 @@
+name: domains_crobat
+input:
+  index: assets
+  filter:
+    scope: true
+cmd: curl https://sonar.omnisint.io/subdomains/${.input.hostname} -s | jq -r -c '.[]'
+output:
+  index: assets
+  ident: ${.output}
+  fields:
+    target_name: ${.input.target_name}
+    hostname: ${.output}
+interval: 24h
+worker: 1

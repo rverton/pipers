@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -28,6 +29,15 @@ const (
 				"ident":{
 					"type":"keyword"
 				},
+				"alert_type":{
+					"type":"keyword"
+				},
+				"doc_index":{
+					"type":"keyword"
+				},
+				"doc_id":{
+					"type":"keyword"
+				},
 				"created":{
 					"type":"date"
 				}
@@ -49,9 +59,8 @@ type Asset struct {
 }
 
 type Alert struct {
-	Name    string                 `json:"name"`
-	Data    map[string]interface{} `json:"data"`
-	Created time.Time              `json:"created"`
+	AlertType string                 `json:"alert_type"`
+	Data      map[string]interface{} `json:"data"`
 
 	// back reference to original entry
 	DocId    string `json:"doc_id"`
@@ -157,33 +166,48 @@ func (db *DB) lastTaskLongEnough(pipe Pipe, id string) (bool, error) {
 }
 
 func (db *DB) retrieve(index string, filter map[string]string) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+
 	log.WithFields(
 		log.Fields{"index": index, "filter": filter},
 	).Debug("retrieving docs")
 
-	searchResult, err := db.Find(index, filter)
-	if err != nil {
-		log.WithFields(log.Fields{"index": index}).Error(err)
-		return nil, err
+	query := elastic.NewBoolQuery()
+
+	for k, v := range filter {
+		query = query.Must(elastic.NewTermQuery(k, v))
 	}
 
-	var results []map[string]interface{}
+	begin := time.Now()
+	count := 0
 
-	for _, hit := range searchResult.Hits.Hits {
-		var m map[string]interface{}
-		err = json.Unmarshal(hit.Source, &m)
+	svc := db.Client.Scroll(index).Query(query)
+	for {
+		res, err := svc.Do(context.Background())
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return results, err
 		}
+		for _, hit := range res.Hits.Hits {
+			count++
 
-		m["_id"] = hit.Id
+			var m map[string]interface{}
+			err = json.Unmarshal(hit.Source, &m)
+			if err != nil {
+				return results, err
+			}
 
-		m = unflat(m)
+			m["_id"] = hit.Id
 
-		results = append(results, m)
+			m = unflat(m)
+
+			results = append(results, m)
+		}
 	}
 
-	log.WithFields(log.Fields{"index": index}).Debugf("query took %d milliseconds\n", searchResult.TookInMillis)
+	log.WithFields(log.Fields{"index": index, "duration": time.Since(begin), "results": count}).Debug("query executed", time.Since(begin))
 
 	return results, nil
 }

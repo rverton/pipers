@@ -80,7 +80,7 @@ func scheduler(pipes []Pipe) error {
 	for _, p := range pipes {
 		wg.Add(1)
 
-		log.WithFields(log.Fields{"pipe": p.Name}).Info("starting scheduler")
+		log.WithFields(log.Fields{"pipe": p.Name}).Info("loaded pipe into scheduler")
 		go p.run(db, redisClient, &wg)
 	}
 
@@ -94,6 +94,10 @@ func main() {
 	var pipes []Pipe
 
 	log.SetLevel(log.DebugLevel)
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05",
+	})
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")

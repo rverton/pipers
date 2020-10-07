@@ -185,7 +185,7 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 	for {
 		log.WithFields(log.Fields{
 			"pipe": p.Name,
-		}).Debugf("running")
+		}).Debugf("scheduling")
 
 		// retrieve (filtered) input
 		data, err := db.retrieve(p.Input.Index, p.Input.Filter)
@@ -231,8 +231,9 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 			} else {
 				log.WithFields(log.Fields{
 					"pipe":     p.Name,
+					"inputId":  inputId,
 					"dataKeys": keys(d),
-				}).Debug("enqueued")
+				}).Info("enqueued")
 			}
 
 			// add task doc
@@ -250,7 +251,6 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 
 		}
 
-		duration, _ := p.interval()
 		time.Sleep(SCHEDULER_SLEEP)
 	}
 }
@@ -337,6 +337,11 @@ func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
 	}
 
 	if upsert.Result == "created" {
+		log.WithFields(log.Fields{
+			"pipe":  p.Name,
+			"ident": id,
+		}).Infof("created document")
+
 		if err := createAlert(db, p, result, id, "CREATED"); err != nil {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
@@ -349,20 +354,27 @@ func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
 }
 
 func createAlert(db *DB, pipe Pipe, data map[string]interface{}, id, name string) error {
-	log.WithFields(log.Fields{
-		"pipe":  pipe.Name,
-		"ident": id,
-	}).Infof("created document")
+
+	data = unflat(data)
+
+	// clean up data map
+	if _, ok := data["data"]; ok {
+		delete(data, "data")
+	}
 
 	alert := Alert{
-		Name:     name,
-		DocIndex: pipe.Output.Index,
-		DocId:    id,
-		Data:     data,
-		Created:  time.Now(),
+		AlertType: name,
+		DocIndex:  pipe.Output.Index,
+		DocId:     id,
+		Data:      data,
 	}
 
 	_, err := db.Client.Index().Index("alerts").BodyJson(alert).Do(db.ctx)
+
+	log.WithFields(log.Fields{
+		"pipe": pipe.Name,
+		"id":   id,
+	}).Debug("created alert")
 
 	return err
 }
