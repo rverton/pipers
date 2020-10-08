@@ -1,17 +1,14 @@
 name: http_content
 input:
-  index: services
+  table: services
   filter:
     service: http
-cmd: TMP=$(mktemp); ffuf -w ./resources/http_wordlist.txt -u ${.input.data.http_detect.url}/FUZZ -ac -recursion -of ejson -s -o $TMP > /dev/null && jq -M -c '.results[]' $TMP
+cmd: TMP=$(mktemp); ffuf -w ./resources/http_wordlist.txt -u ${.input.url}/FUZZ -ac -recursion -of ejson -s -o $TMP > /dev/null && jq -M -c '.results[]' $TMP
 output:
-  index: results
+  table: results
   ident: ${.outputJson.url}|${.outputJson.status}|${.outputJson.length}
-  fields:
-    target_name: ${.input.target_name}
-    hostname: ${.input.hostname}
-    service: http
   data:
+    service: http
     url: ${.outputJson.url}
     status: ${.outputJson.status}
     length: ${.outputJson.length}

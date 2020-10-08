@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -28,50 +28,24 @@ var SCHEDULER_SLEEP = time.Minute * 10
 type Pipe struct {
 	Name  string
 	Input struct {
-		Index  string
+		Table  string
 		Filter map[string]string
 	}
 	Command string `yaml:"cmd"`
 	Output  struct {
-		Index  string
-		Ident  string
-		Fields map[string]string
-		Data   map[string]string
+		Table    string
+		Ident    string
+		Hostname string
+		Data     map[string]string
 	}
 	Interval string // time.Duration format
 	Debug    bool
 	Worker   int
 }
 
-func unflat(m map[string]interface{}) map[string]interface{} {
-	unflatted := make(map[string]interface{})
-
-	for k, v := range m {
-
-		if strings.Contains(k, ".") {
-
-			split := strings.SplitN(k, ".", 2)
-
-			if _, ok := unflatted[split[0]]; !ok {
-				unflatted[split[0]] = make(map[string]interface{})
-			}
-
-			tmp := unflatted[split[0]].(map[string]interface{})
-			tmp[split[1]] = v
-
-			unflatted[split[0]] = tmp
-
-		} else {
-			unflatted[k] = v
-		}
-	}
-
-	return unflatted
-}
-
 func keys(m map[string]interface{}) []string {
 	var s []string
-	for k, _ := range m {
+	for k := range m {
 		s = append(s, k)
 	}
 	return s
@@ -86,7 +60,7 @@ func (p Pipe) interval() (time.Duration, error) {
 }
 
 func (p Pipe) validate() error {
-	idx := p.Input.Index
+	idx := p.Input.Table
 	if idx != "assets" && idx != "services" && idx != "results" {
 		return fmt.Errorf("invalid input: %v", p.Input)
 	}
@@ -98,9 +72,17 @@ func (p Pipe) validate() error {
 	return nil
 }
 
-func (p Pipe) prepareCommand(input map[string]interface{}) (*exec.Cmd, error) {
+// mapInput enriches the data struct with a hostname and a target
+func mapInput(data Data) map[string]interface{} {
+	input := data.Data
+	input["hostname"] = data.Hostname
+	input["target"] = data.Target
+	return input
+}
+
+func (p Pipe) prepareCommand(data Data) (*exec.Cmd, error) {
 	tplData := map[string]interface{}{
-		"input": input,
+		"input": mapInput(data),
 	}
 
 	s, err := Tpl(p.Command, tplData)
@@ -128,13 +110,13 @@ func Tpl(templateBody string, data map[string]interface{}) (string, error) {
 
 }
 
-func generateTemplateData(input map[string]interface{}, output []byte) map[string]interface{} {
+func generateTemplateData(data Data, output []byte) map[string]interface{} {
 	// try to parse as json, ignore if it fails
 	var outputJson map[string]interface{}
 	json.Unmarshal(output, &outputJson)
 
 	return map[string]interface{}{
-		"input":      input,
+		"input":      mapInput(data),
 		"output":     string(output),
 		"outputJson": outputJson,
 	}
@@ -149,18 +131,7 @@ func (p Pipe) generateIdent(tplData map[string]interface{}) (string, error) {
 }
 
 func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
-	doc := make(map[string]interface{})
 	data := make(map[string]interface{})
-
-	for name, val := range p.Output.Fields {
-		s, err := Tpl(val, tplData)
-		if err != nil {
-			log.WithFields(log.Fields{"template": val}).Errorf("cant create template: %v", err)
-			continue
-		}
-
-		doc[name] = s
-	}
 
 	for name, val := range p.Output.Data {
 		s, err := Tpl(val, tplData)
@@ -172,14 +143,17 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 		data[name] = s
 	}
 
-	dataKey := fmt.Sprintf("data.%v", p.Name)
+	s, err := Tpl(p.Output.Hostname, tplData)
+	if err != nil {
+		log.WithFields(log.Fields{"template": p.Output.Hostname}).Errorf("cant create template: %v", err)
+	}
 
-	doc[dataKey] = data
+	data["hostname"] = s
 
-	return doc
+	return data
 }
 
-func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
+func (p Pipe) run(client *asynq.Client, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
@@ -188,37 +162,37 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 		}).Debugf("scheduling")
 
 		// retrieve (filtered) input
-		data, err := db.retrieve(p.Input.Index, p.Input.Filter)
+		start := time.Now()
+		rows, err := retrieve(p.Input.Table, p.Input.Filter)
 		if err != nil {
 			log.Errorf("could not retrieve input: %v", err)
 			break
 		}
 
-		for _, d := range data {
+		for rows.Next() {
 
-			inputId := d["_id"].(string)
-			delete(d, "id")
+			data := Data{}
 
-			// ensure last task execution is long enough
-			var found bool
-			if found, err = db.lastTaskLongEnough(p, inputId); err != nil {
+			err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
+			if err != nil {
 				log.WithFields(log.Fields{
-					"pipe":  p.Name,
 					"error": err,
-				}).Error("get last task")
+				}).Info("retrieving pipe input data failed")
 				continue
 			}
 
-			if found {
+			interval, _ := p.interval()
+
+			if !shouldRun(p.Name, data.Id, interval) {
 				log.WithFields(log.Fields{
-					"pipe": p.Name,
-					"id":   inputId,
-				}).Debug("task too recent, skipping")
+					"pipe":  p.Name,
+					"ident": data.Id,
+				}).Info("task too recent, skipping")
 				continue
 			}
 
 			// enqueue task
-			if err := enqueuePipe(p, d, client); err != nil {
+			if err := enqueuePipe(p, data, client); err != nil {
 				if errors.Is(err, asynq.ErrDuplicateTask) {
 					log.WithFields(log.Fields{
 						"pipe": p.Name,
@@ -231,32 +205,31 @@ func (p Pipe) run(db *DB, client *asynq.Client, wg *sync.WaitGroup) {
 			} else {
 				log.WithFields(log.Fields{
 					"pipe":     p.Name,
-					"inputId":  inputId,
-					"dataKeys": keys(d),
+					"inputId":  data.Id,
+					"dataKeys": keys(data.Data),
 				}).Info("enqueued")
 			}
 
-			// add task doc
-			t := &Task{
-				Pipe:    p.Name,
-				Ident:   inputId,
-				Created: time.Now(),
+			// add task
+			t := Task{
+				Pipe:  p.Name,
+				Ident: data.Id,
 			}
-			if _, err := db.Client.Index().Index("tasks").BodyJson(t).Do(db.ctx); err != nil {
+			if _, err := db.Exec(context.Background(), "INSERT INTO tasks (pipe, ident) VALUES ($1, $2)", t.Pipe, t.Ident); err != nil {
 				log.WithFields(log.Fields{
-					"pipe": p.Name,
-					"err":  err,
-				}).Error("task save")
+					"task":  t,
+					"error": err,
+				}).Error("adding task failed")
 			}
-
 		}
+		log.WithFields(log.Fields{"pipe": p.Name, "duration": time.Since(start)}).Debug("query executed")
 
 		time.Sleep(SCHEDULER_SLEEP)
 	}
 }
 
-func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
-	cmd, err := p.prepareCommand(inputData)
+func (p Pipe) handle(data Data) error {
+	cmd, err := p.prepareCommand(data)
 
 	if err != nil {
 		return fmt.Errorf("cant prepare pipe command: %v\n", err)
@@ -278,13 +251,12 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		tplData := generateTemplateData(inputData, scanner.Bytes())
-
-		result := p.outputMap(tplData)
+		tplData := generateTemplateData(data, scanner.Bytes())
+		output := p.outputMap(tplData)
 
 		id, err := p.generateIdent(tplData)
 		if err != nil {
-			log.Error(err)
+			log.WithFields(log.Fields{"error": err}).Error(err)
 			continue
 		}
 
@@ -301,12 +273,12 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
 				"ident": id,
-			}).Infof("pipe debug: %+v", result)
+			}).Infof("pipe debug: %+v", output)
 
 			continue
 		}
 
-		if err := p.save(id, result, db); err != nil {
+		if err := p.save(id, data, output); err != nil {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
 				"ident": id,
@@ -323,60 +295,55 @@ func (p Pipe) handle(inputData map[string]interface{}, db *DB) error {
 	return nil
 }
 
-func (p Pipe) save(id string, result map[string]interface{}, db *DB) error {
-	result["created"] = time.Now()
+func (p Pipe) save(id string, data Data, result map[string]interface{}) error {
 
-	upsert, err := db.Client.Update().
-		Index(p.Output.Index).
-		Id(id).
-		Doc(result).
-		DocAsUpsert(true).
-		Do(db.ctx)
-	if err != nil {
-		return fmt.Errorf("cant upsert doc: %v", err)
+	sql := fmt.Sprintf(`
+		INSERT INTO %v (id, hostname, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING;
+	`, p.Output.Table)
+
+	// if a hostname is provided, this will overwrite it
+	hostname := data.Hostname
+	if v, ok := result["hostname"].(string); ok && v != "" {
+		hostname = v
 	}
 
-	if upsert.Result == "created" {
+	upsert, err := db.Exec(context.Background(), sql, id, hostname, data.Target, p.Name, result)
+	if err != nil {
+		return err
+	}
+
+	if upsert.RowsAffected() == 1 {
 		log.WithFields(log.Fields{
 			"pipe":  p.Name,
 			"ident": id,
 		}).Infof("created document")
 
-		if err := createAlert(db, p, result, id, "CREATED"); err != nil {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": id,
-			}).Errorf("cant create alert: %v", err)
-		}
+		/*
+			if err := createAlert(db, p, result, id, "CREATED"); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"ident": id,
+				}).Errorf("cant create alert: %v", err)
+			}
+		*/
 	}
 
 	return nil
 }
 
-func createAlert(db *DB, pipe Pipe, data map[string]interface{}, id, name string) error {
+func createAlert(pipe Pipe, data *Data) error {
 
-	data = unflat(data)
+	// TODO: create alert
 
-	// clean up data map
-	if _, ok := data["data"]; ok {
-		delete(data, "data")
-	}
+	/*
+		log.WithFields(log.Fields{
+			"pipe": pipe.Name,
+			"id":   id,
+		}).Debug("created alert")
+	*/
 
-	alert := Alert{
-		AlertType: name,
-		DocIndex:  pipe.Output.Index,
-		DocId:     id,
-		Data:      data,
-	}
-
-	_, err := db.Client.Index().Index("alerts").BodyJson(alert).Do(db.ctx)
-
-	log.WithFields(log.Fields{
-		"pipe": pipe.Name,
-		"id":   id,
-	}).Debug("created alert")
-
-	return err
+	return nil
 }
 
 func loadPipe(filename string) (Pipe, error) {

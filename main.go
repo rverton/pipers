@@ -2,29 +2,26 @@ package main
 
 import (
 	"flag"
+	"os"
 	"sync"
 
 	"github.com/hibiken/asynq"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/sohlich/elogrus.v7"
 )
 
 const WORKER = 3
 
-var db *DB
-
-// indices returns a list of index names
+// tables returns a list of tables names
 // from a list of pipes
-func indices(pipes []Pipe) []string {
-	indexMap := make(map[string]struct{})
+func tables(pipes []Pipe) []string {
+	tableMap := make(map[string]struct{})
 	for _, p := range pipes {
-		indexMap[p.Input.Index] = struct{}{}
-		indexMap[p.Output.Index] = struct{}{}
+		tableMap[p.Input.Table] = struct{}{}
+		tableMap[p.Output.Table] = struct{}{}
 	}
 
 	var i []string
-	for k := range indexMap {
+	for k := range tableMap {
 		i = append(i, k)
 	}
 
@@ -70,10 +67,6 @@ func startWorker(pipes []Pipe) {
 
 // scheduler will load all pipes and add tasks to a queue
 func scheduler(pipes []Pipe) error {
-	if err := db.Setup(indices(pipes)); err != nil {
-		return err
-	}
-
 	redisClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
 
 	var wg sync.WaitGroup
@@ -81,7 +74,7 @@ func scheduler(pipes []Pipe) error {
 		wg.Add(1)
 
 		log.WithFields(log.Fields{"pipe": p.Name}).Info("loaded pipe into scheduler")
-		go p.run(db, redisClient, &wg)
+		go p.run(redisClient, &wg)
 	}
 
 	wg.Wait()
@@ -104,16 +97,10 @@ func main() {
 	flag.Parse()
 
 	// make DB available global
-	db, err = NewDB()
+	db, err = NewDB(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	hook, err := elogrus.NewBulkProcessorElasticHook(db.Client, "localhost", logrus.DebugLevel, "log")
-	if err != nil {
-		log.Panic(err)
-	}
-	log.AddHook(hook)
 
 	if *single == "" {
 		pipes, err = loadPipes("./pipes/*.yml")
@@ -127,6 +114,10 @@ func main() {
 		}
 
 		pipes = append(pipes, pipe)
+	}
+
+	if err := verifyDb(tables(pipes)); err != nil {
+		log.WithFields(log.Fields{"tablesNames": tables(pipes), "error": err}).Fatal("db has not the correct schema")
 	}
 
 	if *workerMode {

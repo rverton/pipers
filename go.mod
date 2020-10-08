@@ -6,6 +6,7 @@ require (
 	github.com/Masterminds/goutils v1.1.0 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/sprig v2.22.0+incompatible
+	github.com/Masterminds/squirrel v1.4.0
 	github.com/coocood/freecache v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/google/uuid v1.1.2 // indirect
@@ -13,6 +14,8 @@ require (
 	github.com/hibiken/asynq/tools v0.0.0-20200920143323-fadcae76d60d // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
+	github.com/jackc/pgx v3.6.2+incompatible
+	github.com/jackc/pgx/v4 v4.9.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/magiconair/properties v1.8.4 // indirect
 	github.com/mattn/go-colorable v0.1.7 // indirect
@@ -20,6 +23,7 @@ require (
 	github.com/miekg/dns v1.1.31 // indirect
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/mapstructure v1.3.3 // indirect
+	github.com/olivere/elastic v6.2.35+incompatible
 	github.com/olivere/elastic/v7 v7.0.20
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/projectdiscovery/gologger v1.0.1 // indirect
