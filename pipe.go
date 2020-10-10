@@ -23,7 +23,7 @@ import (
 
 const INTERVAL_DEFAULT = "24h"
 
-var SCHEDULER_SLEEP = time.Minute * 10
+var SCHEDULER_SLEEP = time.Minute * 1
 
 type Pipe struct {
 	Name  string
@@ -155,11 +155,6 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 }
 
 func (p Pipe) runAsFile(client *asynq.Client) error {
-	tmpInputFile, err := ioutil.TempFile(os.TempDir(), "pipers-tmp-")
-	if err != nil {
-		return fmt.Errorf("could not create tmp file: %v", err)
-	}
-
 	targets, err := retrieveTargets()
 	if err != nil {
 		return fmt.Errorf("retrieving targets failed")
@@ -182,14 +177,17 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 			continue
 		}
 
-		// TODO: check shouldRun()
-
 		rows, err := retrieveByTarget(p.Input.Table, p.Input.Filter, target)
 		if err != nil {
 			return fmt.Errorf("could not retrieve input: %v", err)
 		}
 
 		var data Data
+
+		tmpInputFile, err := ioutil.TempFile(os.TempDir(), "pipers-tmp-")
+		if err != nil {
+			return fmt.Errorf("could not create tmp file: %v", err)
+		}
 
 		count := 0
 		for rows.Next() {
@@ -239,12 +237,12 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 				"target":   target,
 				"lines":    count,
 			}).Info("enqueued as_file")
-		}
 
-		addTask(Task{
-			Pipe:  p.Name,
-			Ident: target,
-		}, p)
+			addTask(Task{
+				Pipe:  p.Name,
+				Ident: target,
+			}, p)
+		}
 
 	}
 
@@ -252,7 +250,9 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 }
 
 func (p Pipe) runSingle(client *asynq.Client) error {
-	rows, err := retrieve(p.Input.Table, p.Input.Filter)
+	interval, _ := p.interval()
+
+	rows, err := retrieve(p.Input.Table, p.Input.Filter, interval)
 	if err != nil {
 		return fmt.Errorf("could not retrieve input: %v", err)
 	}
@@ -263,16 +263,6 @@ func (p Pipe) runSingle(client *asynq.Client) error {
 		err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
 		if err != nil {
 			return fmt.Errorf("scanning pipe input failed: %v", err)
-		}
-
-		interval, _ := p.interval()
-
-		if !shouldRun(p.Name, data.Id, interval) {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": data.Id,
-			}).Info("task too recent, skipping")
-			continue
 		}
 
 		// enqueue task
@@ -290,6 +280,11 @@ func (p Pipe) runSingle(client *asynq.Client) error {
 				"inputId":  data.Id,
 				"dataKeys": keys(data.Data),
 			}).Info("enqueued")
+
+			addTask(Task{
+				Pipe:  p.Name,
+				Ident: data.Id,
+			}, p)
 		}
 
 	}
@@ -411,7 +406,7 @@ func (p Pipe) handle(data Data) error {
 	if p.Input.AsFile != "" {
 		if v, ok := data.Data["as_file"].(string); ok {
 			if err := os.Remove(v); err != nil {
-				log.Errorf("could not get as_file entry to remove temp file")
+				log.Errorf("could not remove as_file tmp file: %v", err)
 			}
 		} else {
 			log.Errorf("could not get as_file entry to remove temp file")
@@ -464,9 +459,7 @@ func (p Pipe) save(id string, data Data, result map[string]interface{}) error {
 
 func createAlert(pipe Pipe, id, alertType string) error {
 
-	sql := `
-		INSERT INTO alerts (type, pipe, ident) VALUES ($1, $2, $3)
-	`
+	sql := `INSERT INTO alerts (type, pipe, ident) VALUES ($1, $2, $3)`
 
 	_, err := db.Exec(context.Background(), sql, alertType, pipe.Name, id)
 	if err != nil {

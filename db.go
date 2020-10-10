@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4"
@@ -126,22 +127,40 @@ func verifyDb(tables []string) error {
 	return nil
 }
 
-// retrieve will return rows from the passed table and filtered by fields
-// this method is prone to an sql injection in the table name, which is not
-// important at this point because every pipe is a command execution by definition
-func retrieve(table string, fields map[string]string) (pgx.Rows, error) {
-	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+// retrieve will return rows from the passed table, filtered by fields
+// and only where no tasks is found (or the task is older than the passed
+// interval. note that this function is vulnerable to sqli, but because
+// a pipe in itself executes user commands, it does not matter here.
+func retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+	sql := fmt.Sprintf(`
+		SELECT
+			A.id, A.hostname, A.target, A.data
+		FROM 
+			%v A
+		LEFT JOIN tasks T
+			ON A.id = T.ident AND T.created_at > NOW() - $1::interval
+		WHERE T.ident IS NULL
+	`, table)
 
-	query := psql.Select("id, hostname, target, data").From(table)
+	var filterQuery []string
+	args := []interface{}{interval}
+
+	// filter from pipe
+	count := 1
 	for k, v := range fields {
-		query = query.Where("(data ->> ?) = ?", k, v)
+		filterQuery = append(
+			filterQuery,
+			fmt.Sprintf("(data ->> $%v) = $%v", count+1, count+2),
+		)
+		args = append(args, k)
+		args = append(args, v)
 	}
 
-	sql, args, err := query.ToSql()
-
-	if err != nil {
-		return nil, err
+	if len(filterQuery) > 0 {
+		sql = fmt.Sprintf("%v AND ", sql)
 	}
+
+	sql = fmt.Sprintf("%v%v", sql, strings.Join(filterQuery, " AND "))
 
 	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
 
