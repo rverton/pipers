@@ -1,0 +1,12 @@
+name: domains_subfinder
+input:
+  table: assets
+  filter:
+    scope: true
+cmd: subfinder -d ${.input.hostname} -exclude-sources dnsdumpster,ipv4info -silent
+output:
+  table: assets
+  ident: ${.output}
+  hostname: ${.output}
+interval: 24h
+worker: 1
