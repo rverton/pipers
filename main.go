@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/hibiken/asynq"
+	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -91,6 +92,10 @@ func main() {
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05",
 	})
+
+	if err = godotenv.Load(); err != nil {
+		log.Fatal("Error loading .env file")
+	}
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")

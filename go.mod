@@ -16,6 +16,7 @@ require (
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jackc/pgx/v4 v4.9.0
+	github.com/joho/godotenv v1.3.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/magiconair/properties v1.8.4 // indirect
 	github.com/mattn/go-colorable v0.1.7 // indirect

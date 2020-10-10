@@ -32,6 +32,18 @@ CREATE TABLE IF NOT EXISTS tasks (
 	ident text not null,
 	created_at TIMESTAMP DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS tasks_pipe_idx ON tasks (pipe);
+CREATE INDEX IF NOT EXISTS tasks_ident_idx ON tasks (ident);
+
+CREATE TABLE IF NOT EXISTS alerts (
+	id serial primary key,
+	type text not null,
+	pipe text not null,
+	ident text not null,
+	created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS alerts_pipe_idx ON alerts (pipe);
+CREATE INDEX IF NOT EXISTS alerts_ident_idx ON alerts (ident);
 `
 
 type Data struct {
@@ -43,8 +55,9 @@ type Data struct {
 }
 
 type Alert struct {
-	AlertType string                 `json:"alert_type"`
-	Data      map[string]interface{} `json:"data"`
+	Type  string
+	Pipe  string
+	Ident string
 }
 
 type Task struct {
@@ -133,4 +146,44 @@ func retrieve(table string, fields map[string]string) (pgx.Rows, error) {
 	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
 
 	return db.Query(context.Background(), sql, args...)
+}
+
+func retrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
+	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+
+	query := psql.Select("id, hostname, target, data").From(table)
+	query = query.Where("target = ?", target)
+
+	for k, v := range fields {
+		query = query.Where("(data ->> ?) = ?", k, v)
+	}
+
+	sql, args, err := query.ToSql()
+
+	if err != nil {
+		return nil, err
+	}
+
+	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
+
+	return db.Query(context.Background(), sql, args...)
+}
+
+func retrieveTargets() ([]string, error) {
+
+	var targets []string
+	rows, err := db.Query(context.Background(), "SELECT DISTINCT target FROM assets")
+	if err != nil {
+		return targets, err
+	}
+
+	for rows.Next() {
+		var t string
+		if err = rows.Scan(&t); err != nil {
+			return targets, err
+		}
+		targets = append(targets, t)
+	}
+
+	return targets, err
 }

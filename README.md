@@ -42,17 +42,17 @@ To test a pipe, `debug: true` can be set in the yaml file so results are not per
 
 This pipe takes all assets (which match the criteria `scope: true`) and runs `assetfinder` on them.
 ```
-name: domains
-input: assets
-filter:
-  scope: true
-cmd: assetfinder -subs-only ${.input.hostname}
-output: assets
-fields:
-  target_name: ${.input.target_name}
-  scope: false
+name: domains_crobat
+input:
+  table: assets
+  filter:
+    scope: true
+cmd: curl https://sonar.omnisint.io/subdomains/${.input.hostname} -s | jq -r -c '.[]'
+output:
+  table: assets
+  ident: ${.output}
   hostname: ${.output}
-ident: ${.output}
 interval: 12h
-worker: 2
+worker: 1
+
 ```

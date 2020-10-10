@@ -30,6 +30,7 @@ type Pipe struct {
 	Input struct {
 		Table  string
 		Filter map[string]string
+		AsFile string `yaml:"as_file"`
 	}
 	Command string `yaml:"cmd"`
 	Output  struct {
@@ -153,82 +154,194 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return data
 }
 
+func (p Pipe) runAsFile(client *asynq.Client) error {
+	tmpInputFile, err := ioutil.TempFile(os.TempDir(), "pipers-tmp-")
+	if err != nil {
+		return fmt.Errorf("could not create tmp file: %v", err)
+	}
+
+	targets, err := retrieveTargets()
+	if err != nil {
+		return fmt.Errorf("retrieving targets failed")
+	}
+
+	log.WithFields(log.Fields{
+		"targets": len(targets),
+		"pipe":    p.Name,
+	}).Debug("retrieved targets for as_file")
+
+	interval, _ := p.interval()
+
+	for _, target := range targets {
+
+		if !shouldRun(p.Name, target, interval) {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": target,
+			}).Info("task as_file too recent, skipping")
+			continue
+		}
+
+		// TODO: check shouldRun()
+
+		rows, err := retrieveByTarget(p.Input.Table, p.Input.Filter, target)
+		if err != nil {
+			return fmt.Errorf("could not retrieve input: %v", err)
+		}
+
+		var data Data
+
+		count := 0
+		for rows.Next() {
+			err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
+			if err != nil {
+				return fmt.Errorf("retrieving pipe input data failed: %v", err)
+			}
+
+			tpl, err := Tpl(p.Input.AsFile, map[string]interface{}{
+				"input": mapInput(data),
+			})
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error": err,
+				}).Info("template for as_file failed")
+				continue
+			}
+
+			tmpInputFile.WriteString(tpl + "\n")
+			count++
+		}
+
+		tmpInputFile.Close()
+
+		// take last data object and put input filename in
+		newData := Data{
+			Target: data.Target,
+			Data: map[string]interface{}{
+				"as_file": tmpInputFile.Name(),
+			},
+		}
+
+		// enqueue task
+		if err := enqueuePipe(p, newData, client); err != nil {
+			if errors.Is(err, asynq.ErrDuplicateTask) {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+				}).Info("enqueueing skipped, task already enqueued")
+			} else {
+				return fmt.Errorf("enqueuing failed: %v", err)
+			}
+		} else {
+			log.WithFields(log.Fields{
+				"pipe":     p.Name,
+				"inputId":  data.Id,
+				"dataKeys": keys(data.Data),
+				"target":   target,
+				"lines":    count,
+			}).Info("enqueued as_file")
+		}
+
+		addTask(Task{
+			Pipe:  p.Name,
+			Ident: target,
+		}, p)
+
+	}
+
+	return nil
+}
+
+func (p Pipe) runSingle(client *asynq.Client) error {
+	rows, err := retrieve(p.Input.Table, p.Input.Filter)
+	if err != nil {
+		return fmt.Errorf("could not retrieve input: %v", err)
+	}
+
+	for rows.Next() {
+
+		data := Data{}
+		err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
+		if err != nil {
+			return fmt.Errorf("scanning pipe input failed: %v", err)
+		}
+
+		interval, _ := p.interval()
+
+		if !shouldRun(p.Name, data.Id, interval) {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": data.Id,
+			}).Info("task too recent, skipping")
+			continue
+		}
+
+		// enqueue task
+		if err := enqueuePipe(p, data, client); err != nil {
+			if errors.Is(err, asynq.ErrDuplicateTask) {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+				}).Info("enqueueing skipped, task already enqueued")
+			} else {
+				return fmt.Errorf("enqueueing failed: %v", err)
+			}
+		} else {
+			log.WithFields(log.Fields{
+				"pipe":     p.Name,
+				"inputId":  data.Id,
+				"dataKeys": keys(data.Data),
+			}).Info("enqueued")
+		}
+
+	}
+
+	return nil
+}
+
+// run will be executed for each pipe and is reponsible for
+// scheduling all tasks
 func (p Pipe) run(client *asynq.Client, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
-		log.WithFields(log.Fields{
-			"pipe": p.Name,
-		}).Debugf("scheduling")
 
-		// retrieve (filtered) input
-		start := time.Now()
-		rows, err := retrieve(p.Input.Table, p.Input.Filter)
-		if err != nil {
-			log.Errorf("could not retrieve input: %v", err)
-			break
-		}
-
-		for rows.Next() {
-
-			data := Data{}
-
-			err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
-			if err != nil {
-				log.WithFields(log.Fields{
-					"error": err,
-				}).Info("retrieving pipe input data failed")
-				continue
-			}
-
-			interval, _ := p.interval()
-
-			if !shouldRun(p.Name, data.Id, interval) {
+		// based on as_file, create a task with all results at once
+		// or a single task for each returned record
+		if p.Input.AsFile != "" {
+			if err := p.runAsFile(client); err != nil {
 				log.WithFields(log.Fields{
 					"pipe":  p.Name,
-					"ident": data.Id,
-				}).Info("task too recent, skipping")
-				continue
-			}
-
-			// enqueue task
-			if err := enqueuePipe(p, data, client); err != nil {
-				if errors.Is(err, asynq.ErrDuplicateTask) {
-					log.WithFields(log.Fields{
-						"pipe": p.Name,
-					}).Info("enqueueing skipped, task already enqueued")
-				} else {
-					log.WithFields(log.Fields{
-						"pipe": p.Name,
-					}).Errorf("enqueueing failed: %v", err)
-				}
-			} else {
-				log.WithFields(log.Fields{
-					"pipe":     p.Name,
-					"inputId":  data.Id,
-					"dataKeys": keys(data.Data),
-				}).Info("enqueued")
-			}
-
-			// add task
-			t := Task{
-				Pipe:  p.Name,
-				Ident: data.Id,
-			}
-			if _, err := db.Exec(context.Background(), "INSERT INTO tasks (pipe, ident) VALUES ($1, $2)", t.Pipe, t.Ident); err != nil {
-				log.WithFields(log.Fields{
-					"task":  t,
 					"error": err,
-				}).Error("adding task failed")
+				}).Error("running as file failed")
 			}
+		} else {
+			if err := p.runSingle(client); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"error": err,
+				}).Error("run single failed")
+			}
+
 		}
-		log.WithFields(log.Fields{"pipe": p.Name, "duration": time.Since(start)}).Debug("query executed")
 
 		time.Sleep(SCHEDULER_SLEEP)
 	}
 }
 
+// addTask will add a task to the database
+func addTask(t Task, p Pipe) {
+	if _, err := db.Exec(context.Background(), "INSERT INTO tasks (pipe, ident) VALUES ($1, $2)", t.Pipe, t.Ident); err != nil {
+		log.WithFields(log.Fields{
+			"task":  t,
+			"error": err,
+		}).Error("adding task failed")
+	}
+}
+
+// handle will be called when a task is received from the
+// queue to be executed
 func (p Pipe) handle(data Data) error {
+	start := time.Now()
+
 	cmd, err := p.prepareCommand(data)
 
 	if err != nil {
@@ -236,7 +349,9 @@ func (p Pipe) handle(data Data) error {
 	}
 
 	log.WithFields(log.Fields{
-		"cmd": cmd.String(),
+		"pipe":     p.Name,
+		"cmd":      cmd.String(),
+		"hostname": data.Hostname,
 	}).Debug("executing")
 
 	stdout, err := cmd.StdoutPipe()
@@ -292,6 +407,23 @@ func (p Pipe) handle(data Data) error {
 		}).Errorf("pipe command failed: %v", err)
 	}
 
+	// clean up if input was passed as a file
+	if p.Input.AsFile != "" {
+		if v, ok := data.Data["as_file"].(string); ok {
+			if err := os.Remove(v); err != nil {
+				log.Errorf("could not get as_file entry to remove temp file")
+			}
+		} else {
+			log.Errorf("could not get as_file entry to remove temp file")
+		}
+	}
+
+	log.WithFields(log.Fields{
+		"pipe":     p.Name,
+		"hostname": data.Hostname,
+		"duration": time.Since(start),
+	}).Info("execution finished")
+
 	return nil
 }
 
@@ -319,29 +451,32 @@ func (p Pipe) save(id string, data Data, result map[string]interface{}) error {
 			"ident": id,
 		}).Infof("created document")
 
-		/*
-			if err := createAlert(db, p, result, id, "CREATED"); err != nil {
-				log.WithFields(log.Fields{
-					"pipe":  p.Name,
-					"ident": id,
-				}).Errorf("cant create alert: %v", err)
-			}
-		*/
+		if err := createAlert(p, id, "CREATED"); err != nil {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": id,
+			}).Errorf("cant create alert: %v", err)
+		}
 	}
 
 	return nil
 }
 
-func createAlert(pipe Pipe, data *Data) error {
+func createAlert(pipe Pipe, id, alertType string) error {
 
-	// TODO: create alert
+	sql := `
+		INSERT INTO alerts (type, pipe, ident) VALUES ($1, $2, $3)
+	`
 
-	/*
-		log.WithFields(log.Fields{
-			"pipe": pipe.Name,
-			"id":   id,
-		}).Debug("created alert")
-	*/
+	_, err := db.Exec(context.Background(), sql, alertType, pipe.Name, id)
+	if err != nil {
+		return err
+	}
+
+	log.WithFields(log.Fields{
+		"pipe": pipe.Name,
+		"id":   id,
+	}).Debug("created alert")
 
 	return nil
 }

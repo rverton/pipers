@@ -3,7 +3,8 @@ input:
   table: services
   filter:
     service: http
-cmd: TMP=$(mktemp); ffuf -w ./resources/http_wordlist.txt -u ${.input.url}/FUZZ -ac -recursion -of ejson -s -o $TMP > /dev/null && jq -M -c '.results[]' $TMP
+#cmd: TMP=$(mktemp); ffuf -w ./resources/http_wordlist.txt -u ${.input.url}/FUZZ -ac -recursion -recursion-depth 2 -of ejson -s -o $TMP > /dev/null && jq -M -c '.results[]' $TMP
+cmd: httpdiscovery -domain ${.input.url} -wordlist ./resources/http-quick.txt -json
 output:
   table: results
   ident: ${.outputJson.url}|${.outputJson.status}|${.outputJson.length}
