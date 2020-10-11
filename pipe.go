@@ -196,6 +196,15 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 				return fmt.Errorf("retrieving pipe input data failed: %v", err)
 			}
 
+			// do not enqueue invalid hostnames
+			if !validHost(data.Hostname) {
+				log.WithFields(log.Fields{
+					"pipe":     p.Name,
+					"hostname": data.Hostname,
+				}).Info("skipping hostname pointing to blacklisted IP")
+				continue
+			}
+
 			tpl, err := Tpl(p.Input.AsFile, map[string]interface{}{
 				"input": mapInput(data),
 			})
@@ -211,6 +220,10 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 		}
 
 		tmpInputFile.Close()
+
+		if count <= 0 {
+			continue
+		}
 
 		// take last data object and put input filename in
 		newData := Data{
@@ -263,6 +276,15 @@ func (p Pipe) runSingle(client *asynq.Client) error {
 		err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
 		if err != nil {
 			return fmt.Errorf("scanning pipe input failed: %v", err)
+		}
+
+		// do not enqueue invalid hostnames
+		if !validHost(data.Hostname) {
+			log.WithFields(log.Fields{
+				"pipe":     p.Name,
+				"hostname": data.Hostname,
+			}).Info("skipping hostname pointing to blacklisted IP")
+			continue
 		}
 
 		// enqueue task
@@ -429,10 +451,14 @@ func (p Pipe) save(id string, data Data, result map[string]interface{}) error {
 		ON CONFLICT DO NOTHING;
 	`, p.Output.Table)
 
-	// if a hostname is provided, this will overwrite it
+	// if a hostname is provided, use the provided one if valid
 	hostname := data.Hostname
 	if v, ok := result["hostname"].(string); ok && v != "" {
 		hostname = v
+	}
+
+	if err := validateDomain(hostname); err != nil {
+		return fmt.Errorf("invalid hostname returned, skipping save")
 	}
 
 	upsert, err := db.Exec(context.Background(), sql, id, hostname, data.Target, p.Name, result)
