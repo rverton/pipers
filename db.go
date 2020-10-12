@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	id serial primary key,
 	pipe text not null,
 	ident text not null,
+	note text,
 	created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS tasks_pipe_idx ON tasks (pipe);
@@ -64,6 +65,7 @@ type Alert struct {
 type Task struct {
 	Pipe    string    `json:"pipe"`
 	Ident   string    `json:"ident"`
+	Note    string    `json:"note"`
 	Created time.Time `json:"created_at"`
 }
 

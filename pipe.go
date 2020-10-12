@@ -196,15 +196,6 @@ func (p Pipe) runAsFile(client *asynq.Client) error {
 				return fmt.Errorf("retrieving pipe input data failed: %v", err)
 			}
 
-			// do not enqueue invalid hostnames
-			if !validHost(data.Hostname) {
-				log.WithFields(log.Fields{
-					"pipe":     p.Name,
-					"hostname": data.Hostname,
-				}).Info("skipping hostname pointing to blacklisted IP")
-				continue
-			}
-
 			tpl, err := Tpl(p.Input.AsFile, map[string]interface{}{
 				"input": mapInput(data),
 			})
@@ -284,6 +275,13 @@ func (p Pipe) runSingle(client *asynq.Client) error {
 				"pipe":     p.Name,
 				"hostname": data.Hostname,
 			}).Info("skipping hostname pointing to blacklisted IP")
+
+			addTask(Task{
+				Pipe:  p.Name,
+				Ident: data.Id,
+				Note:  "ip_blacklisted",
+			}, p)
+
 			continue
 		}
 
@@ -346,7 +344,7 @@ func (p Pipe) run(client *asynq.Client, wg *sync.WaitGroup) {
 
 // addTask will add a task to the database
 func addTask(t Task, p Pipe) {
-	if _, err := db.Exec(context.Background(), "INSERT INTO tasks (pipe, ident) VALUES ($1, $2)", t.Pipe, t.Ident); err != nil {
+	if _, err := db.Exec(context.Background(), "INSERT INTO tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
 		log.WithFields(log.Fields{
 			"task":  t,
 			"error": err,
