@@ -16,4 +16,4 @@ output:
     words: ${.outputJson.words}
     lines: ${.outputJson.lines}
 interval: 48h
-worker: 1
+worker: 3

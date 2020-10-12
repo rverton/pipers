@@ -13,7 +13,7 @@ Define single pipes in yaml files and chain them.
 * Queueing
 * Task uniqueness guaranteed (same task/pipe + data cant be executed at the same time twice)
 * Maximum amount of workers per pipe configurable
-* Logs are persisted in elasticsearch
+* IP blacklist checks (private IPs or special networks)
 
 ## Pipe definition
 * the complete output is available under `${.output}`. If it is json, it is available under `${.outputJson}`
@@ -31,6 +31,12 @@ Run all pipes
 
 ```
 ./pipers
+```
+
+Run worker
+
+```
+./pipers -worker
 ```
 
 To test a pipe, `debug: true` can be set in the yaml file so results are not persisted.
