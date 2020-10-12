@@ -13,4 +13,4 @@ output:
     response: ${.outputJson.serverResponse}
     status: ${index .outputJson "status-code"}
 interval: 12h
-worker: 5
+worker: 8
