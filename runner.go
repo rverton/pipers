@@ -176,7 +176,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 }
 
 // run will be executed for each pipe and is reponsible for
-// scheduling all tasks
+// scheduling tasks periodically
 func run(p pipe.Pipe, client *asynq.Client, ds *db.DataService, wg *sync.WaitGroup) {
 	defer wg.Done()
 

@@ -40,8 +40,7 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	return err
 }
 
-// handler will be called when a job is received
-// this will include a pipe and data
+// handler will be called when a job is received from the queue
 func Handler(ctx context.Context, t *asynq.Task, ds *db.DataService) error {
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
@@ -68,7 +67,7 @@ func Handler(ctx context.Context, t *asynq.Task, ds *db.DataService) error {
 		return err
 	}
 
-	if err := pipe.Process(p, data, ds); err != nil {
+	if err := pipe.Process(ctx, p, data, ds); err != nil {
 		log.WithFields(log.Fields{
 			"pipe": p.Name,
 		}).Errorf("pipe handle failed: %v", err)

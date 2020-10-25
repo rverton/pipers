@@ -3,6 +3,7 @@ package pipe
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -54,7 +55,7 @@ func (p Pipe) validate() error {
 	return nil
 }
 
-func (p Pipe) prepareCommand(data db.Data) (*exec.Cmd, error) {
+func (p Pipe) prepareCommand(ctx context.Context, data db.Data) (*exec.Cmd, error) {
 	tplData := map[string]interface{}{
 		"input": MapInput(data),
 	}
@@ -64,7 +65,7 @@ func (p Pipe) prepareCommand(data db.Data) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("could not prepare command: %v", err)
 	}
 
-	return exec.Command("bash", "-c", s), nil
+	return exec.CommandContext(ctx, "bash", "-c", s), nil
 }
 
 func Tpl(templateBody string, data map[string]interface{}) (string, error) {
@@ -127,10 +128,10 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return data
 }
 
-func Process(p Pipe, data db.Data, ds *db.DataService) error {
+func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) error {
 	start := time.Now()
 
-	cmd, err := p.prepareCommand(data)
+	cmd, err := p.prepareCommand(ctx, data)
 
 	if err != nil {
 		return fmt.Errorf("cant prepare pipe command: %v\n", err)
