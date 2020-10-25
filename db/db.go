@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 )
-
-var db *pgxpool.Pool
 
 const SQL_CREATE_DATA_TBL = `
 CREATE TABLE IF NOT EXISTS %v (
@@ -69,19 +67,39 @@ type Task struct {
 	Created time.Time `json:"created_at"`
 }
 
-func NewDB(uri string) (*pgxpool.Pool, error) {
+type DataService struct {
+	DB *pgxpool.Pool
+}
+
+func InitDb(uri string, tables []string) (*pgxpool.Pool, error) {
 	poolConfig, err := pgxpool.ParseConfig(uri)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse DB URI")
 	}
 
-	return pgxpool.ConnectConfig(context.Background(), poolConfig)
+	db, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	err = setupDb(db, tables)
+
+	return db, err
 }
 
-func shouldRun(pipe, ident string, interval time.Duration) bool {
+func (d *DataService) AddTask(t Task) {
+	if _, err := d.DB.Exec(context.Background(), "INSERT INTO tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
+		log.WithFields(log.Fields{
+			"task":  t,
+			"error": err,
+		}).Error("adding task failed")
+	}
+}
+
+func (d *DataService) ShouldRun(pipe, ident string, interval time.Duration) bool {
 	var n int64
 
-	err := db.QueryRow(
+	err := d.DB.QueryRow(
 		context.Background(),
 		"SELECT 1 from tasks WHERE pipe = $1 and ident = $2 and created_at > NOW() - $3::interval LIMIT 1",
 		pipe,
@@ -98,7 +116,7 @@ func shouldRun(pipe, ident string, interval time.Duration) bool {
 	return false
 }
 
-func tableExists(name string) bool {
+func tableExists(db *pgxpool.Pool, name string) bool {
 	var n int64
 	err := db.QueryRow(context.Background(), "select 1 from information_schema.tables where table_name=$1", name).Scan(&n)
 	if err == pgx.ErrNoRows {
@@ -110,7 +128,7 @@ func tableExists(name string) bool {
 	return true
 }
 
-func verifyDb(tables []string) error {
+func setupDb(db *pgxpool.Pool, tables []string) error {
 	_, err := db.Exec(context.Background(), SQL_CREATE_ESSENTIALS)
 	if err != nil {
 		return fmt.Errorf("unable to create essential tables: %v", err)
@@ -133,7 +151,7 @@ func verifyDb(tables []string) error {
 // and only where no tasks is found (or the task is older than the passed
 // interval. note that this function is vulnerable to sqli, but because
 // a pipe in itself executes user commands, it does not matter here.
-func retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (d *DataService) Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			A.id, A.hostname, A.target, A.data
@@ -166,10 +184,10 @@ func retrieve(table string, fields map[string]string, interval time.Duration) (p
 
 	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
 
-	return db.Query(context.Background(), sql, args...)
+	return d.DB.Query(context.Background(), sql, args...)
 }
 
-func retrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
+func (d *DataService) RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 	query := psql.Select("id, hostname, target, data").From(table)
@@ -187,13 +205,13 @@ func retrieveByTarget(table string, fields map[string]string, target string) (pg
 
 	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
 
-	return db.Query(context.Background(), sql, args...)
+	return d.DB.Query(context.Background(), sql, args...)
 }
 
-func retrieveTargets() ([]string, error) {
+func (d *DataService) RetrieveTargets() ([]string, error) {
 
 	var targets []string
-	rows, err := db.Query(context.Background(), "SELECT DISTINCT target FROM assets")
+	rows, err := d.DB.Query(context.Background(), "SELECT DISTINCT target FROM assets")
 	if err != nil {
 		return targets, err
 	}
@@ -207,4 +225,66 @@ func retrieveTargets() ([]string, error) {
 	}
 
 	return targets, err
+}
+
+func (d *DataService) Save(table, pipe, id string, data Data, result map[string]interface{}) error {
+
+	sql := fmt.Sprintf(`
+		INSERT INTO %v (id, hostname, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING;
+	`, table)
+
+	// if a hostname is provided, use the provided one if valid
+	hostname := data.Hostname
+	if v, ok := result["hostname"].(string); ok && v != "" {
+		hostname = v
+	}
+
+	// todo
+	/*
+		if err := pipe.ValidateDomain(hostname); err != nil {
+			return fmt.Errorf("invalid hostname returned, skipping save")
+		}
+	*/
+
+	upsert, err := d.DB.Exec(context.Background(), sql, id, hostname, data.Target, pipe, result)
+	if err != nil {
+		return err
+	}
+
+	if upsert.RowsAffected() == 1 {
+		log.WithFields(log.Fields{
+			"pipe":  pipe,
+			"ident": id,
+		}).Infof("created document")
+
+		// todo
+		/*
+			if err := createAlert(p, id, "CREATED"); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"ident": id,
+				}).Errorf("cant create alert: %v", err)
+			}
+		*/
+	}
+
+	return nil
+}
+
+func (d *DataService) SaveAlert(pipe string, id, alertType string) error {
+
+	sql := `INSERT INTO alerts (type, pipe, ident) VALUES ($1, $2, $3)`
+
+	_, err := d.DB.Exec(context.Background(), sql, alertType, pipe, id)
+	if err != nil {
+		return err
+	}
+
+	log.WithFields(log.Fields{
+		"pipe": pipe,
+		"id":   id,
+	}).Debug("created alert")
+
+	return nil
 }

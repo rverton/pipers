@@ -1,4 +1,4 @@
-package main
+package pipe
 
 import (
 	"bufio"
@@ -48,7 +48,7 @@ func isPrivateIp(ip net.IP) bool {
 }
 
 // validHost checks if a hostname is resolvable and is not blacklisted
-func validHost(hostname string) bool {
+func ValidHost(hostname string) bool {
 
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
@@ -62,10 +62,7 @@ func validHost(hostname string) bool {
 	return !isPrivateIp(ips[0])
 }
 
-// checkDomain returns an error if the domain name is not valid
-// See https://tools.ietf.org/html/rfc1034#section-3.5 and
-// https://tools.ietf.org/html/rfc1123#section-2.
-func validateDomain(name string) error {
+func ValidateDomain(name string) error {
 	switch {
 	case len(name) == 0:
 		return nil // an empty domain name will result in a cookie without a domain restriction
@@ -114,4 +111,21 @@ func validateDomain(name string) error {
 		return fmt.Errorf("cookie domain: top level domain '%s' at offset %d begins with a digit", name[l:], l)
 	}
 	return nil
+}
+
+// tables returns a list of tables names
+// from a list of pipes
+func Tables(pipes []Pipe) []string {
+	tableMap := make(map[string]struct{})
+	for _, p := range pipes {
+		tableMap[p.Input.Table] = struct{}{}
+		tableMap[p.Output.Table] = struct{}{}
+	}
+
+	var i []string
+	for k := range tableMap {
+		i = append(i, k)
+	}
+
+	return i
 }

@@ -1,4 +1,4 @@
-package main
+package queue
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/rverton/pipers/db"
+	"github.com/rverton/pipers/pipe"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -15,7 +17,7 @@ const TASK_PIPE = "pipe:handle"
 const TASK_LOCK = time.Hour * 2
 const TASK_TIMEOUT = TASK_LOCK
 
-func enqueuePipe(p Pipe, data Data, client *asynq.Client) error {
+func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	m := make(map[string]interface{})
 
 	pipeBytes, err := json.Marshal(p)
@@ -40,7 +42,7 @@ func enqueuePipe(p Pipe, data Data, client *asynq.Client) error {
 
 // handler will be called when a job is received
 // this will include a pipe and data
-func handler(ctx context.Context, t *asynq.Task) error {
+func Handler(ctx context.Context, t *asynq.Task, ds *db.DataService) error {
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
 		log.Errorf("getting task payload failed: %v", err)
@@ -52,21 +54,21 @@ func handler(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	var p Pipe
+	var p pipe.Pipe
 	if err := json.Unmarshal([]byte(pipeData), &p); err != nil {
 		err := fmt.Errorf("unable to unmarshal pipe: %v", err)
 		log.WithFields(log.Fields{"error": err}).Errorf("unable to unmarshal pipe")
 		return err
 	}
 
-	var data Data
+	var data db.Data
 	if err := json.Unmarshal([]byte(dataData), &data); err != nil {
 		err := fmt.Errorf("unable to unmarshal pipe: %v", err)
 		log.Error(err)
 		return err
 	}
 
-	if err := p.handle(data); err != nil {
+	if err := pipe.Process(p, data, ds); err != nil {
 		log.WithFields(log.Fields{
 			"pipe": p.Name,
 		}).Errorf("pipe handle failed: %v", err)
@@ -76,7 +78,7 @@ func handler(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-func queueErrorHandler(ctx context.Context, task *asynq.Task, err error) {
+func ErrorHandler(ctx context.Context, task *asynq.Task, err error) {
 	retried, _ := asynq.GetRetryCount(ctx)
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 	if retried >= maxRetry {
