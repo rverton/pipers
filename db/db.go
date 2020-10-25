@@ -240,13 +240,6 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 		hostname = v
 	}
 
-	// todo
-	/*
-		if err := pipe.ValidateDomain(hostname); err != nil {
-			return fmt.Errorf("invalid hostname returned, skipping save")
-		}
-	*/
-
 	upsert, err := d.DB.Exec(context.Background(), sql, id, hostname, data.Target, pipe, result)
 	if err != nil {
 		return err
@@ -258,15 +251,12 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 			"ident": id,
 		}).Infof("created document")
 
-		// todo
-		/*
-			if err := createAlert(p, id, "CREATED"); err != nil {
-				log.WithFields(log.Fields{
-					"pipe":  p.Name,
-					"ident": id,
-				}).Errorf("cant create alert: %v", err)
-			}
-		*/
+		if err := d.SaveAlert(pipe, id, "CREATED"); err != nil {
+			log.WithFields(log.Fields{
+				"pipe":  pipe,
+				"ident": id,
+			}).Errorf("cant create alert: %v", err)
+		}
 	}
 
 	return nil

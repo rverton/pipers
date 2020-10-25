@@ -181,6 +181,21 @@ func Process(p Pipe, data db.Data, ds *db.DataService) error {
 			continue
 		}
 
+		hostname := data.Hostname
+		if v, ok := output["hostname"].(string); ok && v != "" {
+			hostname = v
+		}
+
+		if err := ValidateDomain(hostname); err != nil {
+			log.WithFields(log.Fields{
+				"pipe":     p.Name,
+				"ident":    id,
+				"hostname": hostname,
+			}).Errorf("invalid hostname, skipping")
+
+			continue
+		}
+
 		if err := ds.Save(p.Output.Table, p.Name, id, data, output); err != nil {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
