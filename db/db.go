@@ -182,8 +182,6 @@ func (d *DataService) Retrieve(table string, fields map[string]string, interval 
 
 	sql = fmt.Sprintf("%v%v", sql, strings.Join(filterQuery, " AND "))
 
-	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
-
 	return d.DB.Query(context.Background(), sql, args...)
 }
 
@@ -202,8 +200,6 @@ func (d *DataService) RetrieveByTarget(table string, fields map[string]string, t
 	if err != nil {
 		return nil, err
 	}
-
-	log.WithFields(log.Fields{"sql": sql, "args": args}).Debug("generated sql")
 
 	return d.DB.Query(context.Background(), sql, args...)
 }
@@ -239,6 +235,8 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 	if v, ok := result["hostname"].(string); ok && v != "" {
 		hostname = v
 	}
+
+	delete(result, "hostname")
 
 	upsert, err := d.DB.Exec(context.Background(), sql, id, hostname, data.Target, pipe, result)
 	if err != nil {

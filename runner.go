@@ -98,11 +98,10 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 			}
 		} else {
 			log.WithFields(log.Fields{
-				"pipe":     p.Name,
-				"inputId":  data.Id,
-				"dataKeys": keys(data.Data),
-				"target":   target,
-				"lines":    count,
+				"pipe":    p.Name,
+				"inputId": data.Id,
+				"target":  target,
+				"lines":   count,
 			}).Info("enqueued as_file")
 
 			ds.AddTask(db.Task{
@@ -159,9 +158,8 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 			}
 		} else {
 			log.WithFields(log.Fields{
-				"pipe":     p.Name,
-				"inputId":  data.Id,
-				"dataKeys": keys(data.Data),
+				"pipe":    p.Name,
+				"inputId": data.Id,
 			}).Info("enqueued")
 
 			ds.AddTask(db.Task{
