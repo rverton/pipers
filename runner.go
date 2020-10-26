@@ -123,7 +123,11 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 		return fmt.Errorf("could not retrieve input: %v", err)
 	}
 
+	var tasks []db.Task
+
+	count := 0
 	for rows.Next() {
+		count++
 
 		data := db.Data{}
 		err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
@@ -146,13 +150,18 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 				"inputId": data.Id,
 			}).Info("enqueued")
 
-			ds.AddTask(db.Task{
+			tasks = append(tasks, db.Task{
 				Pipe:  p.Name,
 				Ident: data.Id,
 			})
 		}
-
 	}
+
+	for _, t := range tasks {
+		ds.AddTask(t)
+	}
+
+	log.Debugf("retrieved %v items for queueing", count)
 
 	return nil
 }
