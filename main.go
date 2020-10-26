@@ -15,6 +15,7 @@ import (
 )
 
 const WORKER = 3
+const LOGFILE = "/tmp/pipers.log"
 
 func main() {
 	var err error

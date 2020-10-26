@@ -20,6 +20,7 @@ import (
 )
 
 const INTERVAL_DEFAULT = "24h"
+const TIMEOUT_DEFAULT = "1h"
 
 type Pipe struct {
 	Name  string
@@ -36,6 +37,7 @@ type Pipe struct {
 		Data     map[string]string
 	}
 	interval string `yaml:"interval"` // time.Duration format
+	timeout  string `yaml:"timeout"`  // time.Duration format
 	Debug    bool
 	Worker   int
 }
@@ -45,6 +47,13 @@ func (p Pipe) Interval() (time.Duration, error) {
 		p.interval = INTERVAL_DEFAULT
 	}
 	return time.ParseDuration(p.interval)
+}
+
+func (p Pipe) Timeout() (time.Duration, error) {
+	if p.timeout == "" {
+		p.timeout = TIMEOUT_DEFAULT
+	}
+	return time.ParseDuration(p.timeout)
 }
 
 func (p Pipe) validate() error {

@@ -47,6 +47,8 @@ To test a pipe, `debug: true` can be set in the yaml file so results are not per
 ### assets
 
 This pipe takes all assets (which match the criteria `scope: true`) and runs `assetfinder` on them.
+The interval (how often this pipe should be run for each row) is set to 12h, while the
+task will be cancelled after 1m.
 ```
 name: domains_crobat
 input:
@@ -59,6 +61,7 @@ output:
   ident: ${.output}
   hostname: ${.output}
 interval: 12h
+timeout: 1m
 worker: 1
 
 ```

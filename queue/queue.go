@@ -15,7 +15,6 @@ import (
 
 const TASK_PIPE = "pipe:handle"
 const TASK_LOCK = time.Hour * 2
-const TASK_TIMEOUT = TASK_LOCK
 
 func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	m := make(map[string]interface{})
@@ -32,10 +31,13 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	m["data"] = string(dataBytes)
 	m["pipe"] = string(pipeBytes)
 
+	timeout, _ := p.Timeout()
+
 	_, err = client.Enqueue(
 		asynq.NewTask(TASK_PIPE, m),
-		asynq.Unique(TASK_LOCK), asynq.Queue(p.Name),
-		asynq.Timeout(TASK_TIMEOUT),
+		asynq.Unique(timeout),
+		asynq.Queue(p.Name),
+		asynq.Timeout(timeout),
 	)
 	return err
 }
