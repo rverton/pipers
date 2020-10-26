@@ -140,7 +140,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 			if errors.Is(err, asynq.ErrDuplicateTask) {
 				log.WithFields(log.Fields{
 					"pipe": p.Name,
-				}).Info("enqueueing skipped, task already enqueued")
+				}).Debug("enqueueing skipped, task already enqueued")
 			} else {
 				return fmt.Errorf("enqueueing failed: %v", err)
 			}
@@ -162,9 +162,9 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 	}
 
 	log.WithFields(log.Fields{
-		"count": count,
-		"tasks": len(tasks),
-	}).Debugf("retrieve finished", count)
+		"tasks":   len(tasks),
+		"skipped": count - len(tasks),
+	}).Info("scheduler run")
 
 	return nil
 }
