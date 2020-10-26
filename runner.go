@@ -161,7 +161,10 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 		ds.AddTask(t)
 	}
 
-	log.Debugf("retrieved %v items for queueing", count)
+	log.WithFields(log.Fields{
+		"count": count,
+		"tasks": len(tasks),
+	}).Debugf("retrieve finished", count)
 
 	return nil
 }
