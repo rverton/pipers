@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS %v (
 	data jsonb,
 	created_at TIMESTAMP DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS %v_hostname_idx ON %v (hostname);
+CREATE INDEX IF NOT EXISTS %v_target_idx ON %v (target);
 `
 
 const SQL_CREATE_ESSENTIALS = `
@@ -71,7 +73,7 @@ type DataService struct {
 	DB *pgxpool.Pool
 }
 
-func InitDb(uri string, tables []string) (*pgxpool.Pool, error) {
+func InitDb(uri string) (*pgxpool.Pool, error) {
 	poolConfig, err := pgxpool.ParseConfig(uri)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse DB URI")
@@ -81,8 +83,6 @@ func InitDb(uri string, tables []string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	err = setupDb(db, tables)
 
 	return db, err
 }
@@ -128,7 +128,7 @@ func tableExists(db *pgxpool.Pool, name string) bool {
 	return true
 }
 
-func setupDb(db *pgxpool.Pool, tables []string) error {
+func SetupDb(db *pgxpool.Pool, tables []string) error {
 	_, err := db.Exec(context.Background(), SQL_CREATE_ESSENTIALS)
 	if err != nil {
 		return fmt.Errorf("unable to create essential tables: %v", err)
@@ -137,7 +137,7 @@ func setupDb(db *pgxpool.Pool, tables []string) error {
 	for _, name := range tables {
 
 		// create table with SQL_CREATE_DATA_TBL
-		_, err := db.Exec(context.Background(), fmt.Sprintf(SQL_CREATE_DATA_TBL, name))
+		_, err := db.Exec(context.Background(), fmt.Sprintf(SQL_CREATE_DATA_TBL, name, name, name, name, name))
 		if err != nil {
 			return fmt.Errorf("unable to create %v table: %v", name, err)
 		}

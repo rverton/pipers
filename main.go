@@ -50,11 +50,15 @@ func main() {
 	}
 
 	// make DB available global
-	dbconn, err := db.InitDb(os.Getenv("DATABASE_URL"), pipe.Tables(pipes))
+	dbconn, err := db.InitDb(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer dbconn.Close()
+
+	if err := db.SetupDb(dbconn, pipe.Tables(pipes)); err != nil {
+		log.Fatal(err)
+	}
 
 	ds := &db.DataService{DB: dbconn}
 

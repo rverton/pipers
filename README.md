@@ -20,10 +20,8 @@ Define single pipes in yaml files and chain them.
 
 ## Installation
 
-Elasticsearch is needed for persistence. Use docker-compose to start Elasticsearch and Kibana:
-```
-$ docker-compose up -d
-```
+* Install redis
+* `go build`
 
 ## Usage
 
