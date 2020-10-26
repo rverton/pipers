@@ -2,9 +2,11 @@ package pipe
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
+	"time"
 	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
@@ -48,9 +50,15 @@ func isPrivateIp(ip net.IP) bool {
 }
 
 // validHost checks if a hostname is resolvable and is not blacklisted
-func ValidHost(hostname string) bool {
+func IsValidHost(hostname string) bool {
 
-	ips, err := net.LookupIP(hostname)
+	const timeout = 3 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var r net.Resolver
+
+	ips, err := r.LookupIP(ctx, "ip4", hostname)
 	if err != nil {
 		return true
 	}

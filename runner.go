@@ -131,22 +131,6 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 			return fmt.Errorf("scanning pipe input failed: %v", err)
 		}
 
-		// do not enqueue invalid hostnames
-		if !pipe.ValidHost(data.Hostname) {
-			log.WithFields(log.Fields{
-				"pipe":     p.Name,
-				"hostname": data.Hostname,
-			}).Info("skipping hostname pointing to blacklisted IP")
-
-			ds.AddTask(db.Task{
-				Pipe:  p.Name,
-				Ident: data.Id,
-				Note:  "ip_blacklisted",
-			})
-
-			continue
-		}
-
 		// enqueue task
 		if err := queue.EnqueuePipe(p, data, client); err != nil {
 			if errors.Is(err, asynq.ErrDuplicateTask) {
