@@ -162,6 +162,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 	}
 
 	log.WithFields(log.Fields{
+		"pipe":    p.Name,
 		"tasks":   len(tasks),
 		"skipped": count - len(tasks),
 	}).Info("scheduler run")
