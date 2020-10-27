@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 
@@ -179,7 +180,14 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) erro
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		tplData := generateTemplateData(data, scanner.Bytes())
+		b := scanner.Bytes()
+
+		// skip if result is empty
+		if strings.TrimSpace(string(b)) == "" {
+			continue
+		}
+
+		tplData := generateTemplateData(data, b)
 		output := p.outputMap(tplData)
 
 		id, err := p.Ident(tplData)

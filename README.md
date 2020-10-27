@@ -42,11 +42,12 @@ To test a pipe, `debug: true` can be set in the yaml file so results are not per
 
 ## Examples
 
-### assets
+### assets via Project crobat (Rapid7 FDNS dump)
 
 This pipe takes all assets (which match the criteria `scope: true`) and runs `assetfinder` on them.
 The interval (how often this pipe should be run for each row) is set to 12h, while the
-task will be cancelled after 1m.
+task will be cancelled after 1m. Additionally, an alert message can be defined which
+is saved with the alert and used for notification hooks.
 ```
 name: domains_crobat
 input:
@@ -61,5 +62,5 @@ output:
 interval: 12h
 timeout: 1m
 worker: 1
-
+alert_msg: New domain '${.output}'
 ```
