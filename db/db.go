@@ -223,7 +223,7 @@ func (d *DataService) RetrieveTargets() ([]string, error) {
 	return targets, err
 }
 
-func (d *DataService) Save(table, pipe, id string, data Data, result map[string]interface{}) error {
+func (d *DataService) Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error) {
 
 	sql := fmt.Sprintf(`
 		INSERT INTO %v (id, hostname, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
@@ -240,24 +240,14 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 
 	upsert, err := d.DB.Exec(context.Background(), sql, id, hostname, data.Target, pipe, result)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if upsert.RowsAffected() == 1 {
-		log.WithFields(log.Fields{
-			"pipe":  pipe,
-			"ident": id,
-		}).Infof("created document")
-
-		if err := d.SaveAlert(pipe, id, "CREATED"); err != nil {
-			log.WithFields(log.Fields{
-				"pipe":  pipe,
-				"ident": id,
-			}).Errorf("cant create alert: %v", err)
-		}
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 func (d *DataService) SaveAlert(pipe string, id, alertType string) error {

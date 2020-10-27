@@ -9,6 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 	"github.com/rverton/pipers/db"
+	"github.com/rverton/pipers/notification"
 	"github.com/rverton/pipers/pipe"
 	"github.com/rverton/pipers/queue"
 	log "github.com/sirupsen/logrus"
@@ -30,6 +31,8 @@ func main() {
 	if err = godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file")
 	}
+
+	notification.SlackWebhook = os.Getenv("SLACK_WEBHOOK")
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")

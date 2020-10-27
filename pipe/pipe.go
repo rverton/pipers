@@ -15,6 +15,7 @@ import (
 
 	"github.com/Masterminds/sprig"
 	"github.com/rverton/pipers/db"
+	"github.com/rverton/pipers/notification"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -36,24 +37,41 @@ type Pipe struct {
 		Hostname string
 		Data     map[string]string
 	}
-	interval string `yaml:"interval"` // time.Duration format
-	timeout  string `yaml:"timeout"`  // time.Duration format
-	Debug    bool
-	Worker   int
+	IntervalValue string `yaml:"interval"` // time.Duration format
+	TimeoutValue  string `yaml:"timeout"`  // time.Duration format
+	AlertMsgValue string `yaml:"alert_msg"`
+	Debug         bool
+	Worker        int
 }
 
 func (p Pipe) Interval() (time.Duration, error) {
-	if p.interval == "" {
-		p.interval = INTERVAL_DEFAULT
+	if p.IntervalValue == "" {
+		p.IntervalValue = INTERVAL_DEFAULT
 	}
-	return time.ParseDuration(p.interval)
+	return time.ParseDuration(p.IntervalValue)
 }
 
 func (p Pipe) Timeout() (time.Duration, error) {
-	if p.timeout == "" {
-		p.timeout = TIMEOUT_DEFAULT
+	if p.TimeoutValue == "" {
+		p.TimeoutValue = TIMEOUT_DEFAULT
 	}
-	return time.ParseDuration(p.timeout)
+	return time.ParseDuration(p.TimeoutValue)
+}
+
+func (p Pipe) Ident(tplData map[string]interface{}) (string, error) {
+	if p.Output.Ident == "" {
+		return "", fmt.Errorf("ident field is empty")
+	}
+
+	return Tpl(p.Output.Ident, tplData)
+}
+
+func (p Pipe) AlertMsg(tplData map[string]interface{}) (string, error) {
+	if p.AlertMsgValue == "" {
+		return p.Ident(tplData)
+	}
+
+	return Tpl(p.AlertMsgValue, tplData)
 }
 
 func (p Pipe) validate() error {
@@ -94,6 +112,8 @@ func Tpl(templateBody string, data map[string]interface{}) (string, error) {
 
 }
 
+// generateTemplateData will bring the data in the correct
+// structure for the yml fields
 func generateTemplateData(data db.Data, output []byte) map[string]interface{} {
 	// try to parse as json, ignore if it fails
 	var outputJson map[string]interface{}
@@ -106,14 +126,7 @@ func generateTemplateData(data db.Data, output []byte) map[string]interface{} {
 	}
 }
 
-func (p Pipe) generateIdent(tplData map[string]interface{}) (string, error) {
-	if p.Output.Ident == "" {
-		return "", fmt.Errorf("ident field is empty")
-	}
-
-	return Tpl(p.Output.Ident, tplData)
-}
-
+// outputMap will pass the template data to each individual output field
 func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	data := make(map[string]interface{})
 
@@ -162,12 +175,14 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) erro
 		return fmt.Errorf("cant execute pipe command: %v\n", err)
 	}
 
+	var notifyText string
+
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		tplData := generateTemplateData(data, scanner.Bytes())
 		output := p.outputMap(tplData)
 
-		id, err := p.generateIdent(tplData)
+		id, err := p.Ident(tplData)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Error(err)
 			continue
@@ -206,11 +221,45 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) erro
 			continue
 		}
 
-		if err := ds.Save(p.Output.Table, p.Name, id, data, output); err != nil {
+		inserted, err := ds.Save(p.Output.Table, p.Name, id, data, output)
+		if err != nil {
 			log.WithFields(log.Fields{
 				"pipe":  p.Name,
 				"ident": id,
 			}).Errorf("unable to save: %v", err)
+			continue
+		}
+
+		if inserted {
+			log.WithFields(log.Fields{
+				"pipe":  p.Name,
+				"ident": id,
+			}).Infof("created document")
+
+			if err := ds.SaveAlert(p.Name, id, "CREATED"); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"ident": id,
+				}).Errorf("cant create alert: %v", err)
+			}
+
+			msg, err := p.AlertMsg(tplData)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"error": err,
+				}).Errorf("generating alert failed")
+			} else {
+				notifyText += msg + "\n"
+			}
+		}
+
+	}
+
+	if len(notifyText) > 0 {
+		notifyText = fmt.Sprintf("*[%v]*\n%v", p.Name, notifyText)
+		if err := notification.SlackNotification(notifyText); err != nil {
+			log.Errorf("slack webhook failed: %v", err)
 		}
 	}
 
