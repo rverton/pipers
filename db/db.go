@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 	type text not null,
 	pipe text not null,
 	ident text not null,
+	message text,
 	created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS alerts_pipe_idx ON alerts (pipe);
@@ -250,11 +251,11 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 	return false, nil
 }
 
-func (d *DataService) SaveAlert(pipe string, id, alertType string) error {
+func (d *DataService) SaveAlert(pipe string, id, msg, alertType string) error {
 
-	sql := `INSERT INTO alerts (type, pipe, ident) VALUES ($1, $2, $3)`
+	sql := `INSERT INTO alerts (type, pipe, ident, message) VALUES ($1, $2, $3, $4)`
 
-	_, err := d.DB.Exec(context.Background(), sql, alertType, pipe, id)
+	_, err := d.DB.Exec(context.Background(), sql, alertType, pipe, id, msg)
 	if err != nil {
 		return err
 	}

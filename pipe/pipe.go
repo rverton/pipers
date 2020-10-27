@@ -236,13 +236,6 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) erro
 				"ident": id,
 			}).Infof("created document")
 
-			if err := ds.SaveAlert(p.Name, id, "CREATED"); err != nil {
-				log.WithFields(log.Fields{
-					"pipe":  p.Name,
-					"ident": id,
-				}).Errorf("cant create alert: %v", err)
-			}
-
 			msg, err := p.AlertMsg(tplData)
 			if err != nil {
 				log.WithFields(log.Fields{
@@ -251,6 +244,13 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) erro
 				}).Errorf("generating alert failed")
 			} else {
 				notifyText += msg + "\n"
+			}
+
+			if err := ds.SaveAlert(p.Name, id, msg, "CREATED"); err != nil {
+				log.WithFields(log.Fields{
+					"pipe":  p.Name,
+					"ident": id,
+				}).Errorf("cant create alert: %v", err)
 			}
 		}
 
