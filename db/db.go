@@ -158,8 +158,8 @@ func (d *DataService) Retrieve(table string, fields map[string]string, interval 
 			A.id, A.hostname, A.target, A.data
 		FROM 
 			%v A
-		LEFT JOIN tasks T
-			ON A.id = T.ident AND T.created_at > NOW() - $1::interval
+			LEFT JOIN tasks T
+			ON A.id = T.ident AND A.pipe = T.pipe AND T.created_at > NOW() - $1::interval
 		WHERE T.ident IS NULL
 	`, table)
 
@@ -175,6 +175,7 @@ func (d *DataService) Retrieve(table string, fields map[string]string, interval 
 		)
 		args = append(args, k)
 		args = append(args, v)
+		count++
 	}
 
 	if len(filterQuery) > 0 {
