@@ -75,6 +75,7 @@ func Handler(ctx context.Context, t *asynq.Task, ds *db.DataService) error {
 			"pipe":     p.Name,
 			"hostname": data.Hostname,
 		}).Info("skipping hostname pointing to blacklisted IP")
+		return nil
 	}
 
 	if err := pipe.Process(ctx, p, data, ds); err != nil {

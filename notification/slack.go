@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 )
@@ -18,7 +17,6 @@ type slackRequestBody struct {
 func SlackNotification(msg string) error {
 
 	if SlackWebhook == "" {
-		fmt.Println("no webhook")
 		return nil
 	}
 
@@ -41,6 +39,5 @@ func SlackNotification(msg string) error {
 	if buf.String() != "ok" {
 		return errors.New("Non-ok response returned from Slack")
 	}
-	fmt.Println("webhook sent")
 	return nil
 }
