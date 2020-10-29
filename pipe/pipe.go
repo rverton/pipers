@@ -15,11 +15,14 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig"
-	"github.com/robertkrimen/otto"
+
 	"github.com/rverton/pipers/db"
 	"github.com/rverton/pipers/notification"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+
+	"github.com/robertkrimen/otto"
+	_ "github.com/robertkrimen/otto/underscore"
 )
 
 const INTERVAL_DEFAULT = "24h"
@@ -156,18 +159,18 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 func (p Pipe) filter(vm *otto.Otto, output string) (bool, string, error) {
 	err := vm.Set("output", output)
 	if err != nil {
-		return false, "", err
+		return true, "", err
 	}
 
 	for name, f := range p.Filter {
 		value, err := vm.Run(f)
 		if err != nil {
-			return false, "", err
+			return true, "", err
 		}
 
 		result, err := value.ToBoolean()
 		if err != nil {
-			return false, "", err
+			return true, "", err
 		}
 
 		if result {
@@ -222,7 +225,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err,
-			}).Error("filtering failed")
+			}).Error("filtering failed, skipping output")
 			continue
 		}
 

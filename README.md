@@ -17,6 +17,7 @@ Define single pipes in yaml files and chain them.
 
 ## Pipe definition
 * the complete output is available under `${.output}`. If it is json, it is available under `${.outputJson}`
+* `filters` can extend a pipe with (javascript) logic
 
 ## Installation
 
