@@ -151,7 +151,7 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return data
 }
 
-func Process(ctx context.Context, p Pipe, data db.Data, ds *db.DataService) error {
+func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error {
 	start := time.Now()
 
 	cmd, err := p.prepareCommand(ctx, data)

@@ -43,7 +43,7 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 }
 
 // handler will be called when a job is received from the queue
-func Handler(ctx context.Context, t *asynq.Task, ds *db.DataService) error {
+func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
 		log.Errorf("getting task payload failed: %v", err)

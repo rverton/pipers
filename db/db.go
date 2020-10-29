@@ -13,42 +13,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 )
 
-const SQL_CREATE_DATA_TBL = `
-CREATE TABLE IF NOT EXISTS %v (
-	id text primary key,
-	hostname text not null,
-	target text not null,
-	pipe text not null,
-	data jsonb,
-	created_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS %v_hostname_idx ON %v (hostname);
-CREATE INDEX IF NOT EXISTS %v_target_idx ON %v (target);
-`
-
-const SQL_CREATE_ESSENTIALS = `
-CREATE TABLE IF NOT EXISTS tasks (
-	id serial primary key,
-	pipe text not null,
-	ident text not null,
-	note text,
-	created_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS tasks_pipe_idx ON tasks (pipe);
-CREATE INDEX IF NOT EXISTS tasks_ident_idx ON tasks (ident);
-
-CREATE TABLE IF NOT EXISTS alerts (
-	id serial primary key,
-	type text not null,
-	pipe text not null,
-	ident text not null,
-	message text,
-	created_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS alerts_pipe_idx ON alerts (pipe);
-CREATE INDEX IF NOT EXISTS alerts_ident_idx ON alerts (ident);
-`
-
 type Data struct {
 	Id       string                 `json:"id"`
 	Hostname string                 `json:"hostname"`
@@ -70,7 +34,17 @@ type Task struct {
 	Created time.Time `json:"created_at"`
 }
 
-type DataService struct {
+type DataService interface {
+	AddTask(t Task)
+	ShouldRun(pipe, ident string, interval time.Duration) bool
+	Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error)
+	RetrieveTargets() ([]string, error)
+	RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error)
+	Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error)
+	SaveAlert(pipe string, id, msg, alertType string) error
+}
+
+type PostgresService struct {
 	DB *pgxpool.Pool
 }
 
@@ -88,7 +62,7 @@ func InitDb(uri string) (*pgxpool.Pool, error) {
 	return db, err
 }
 
-func (d *DataService) AddTask(t Task) {
+func (d *PostgresService) AddTask(t Task) {
 	if _, err := d.DB.Exec(context.Background(), "INSERT INTO tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
 		log.WithFields(log.Fields{
 			"task":  t,
@@ -97,7 +71,7 @@ func (d *DataService) AddTask(t Task) {
 	}
 }
 
-func (d *DataService) ShouldRun(pipe, ident string, interval time.Duration) bool {
+func (d *PostgresService) ShouldRun(pipe, ident string, interval time.Duration) bool {
 	var n int64
 
 	err := d.DB.QueryRow(
@@ -152,7 +126,7 @@ func SetupDb(db *pgxpool.Pool, tables []string) error {
 // and only where no tasks is found (or the task is older than the passed
 // interval. note that this function is vulnerable to sqli, but because
 // a pipe in itself executes user commands, it does not matter here.
-func (d *DataService) Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (d *PostgresService) Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			A.id, A.hostname, A.target, A.data
@@ -187,7 +161,7 @@ func (d *DataService) Retrieve(table string, fields map[string]string, interval 
 	return d.DB.Query(context.Background(), sql, args...)
 }
 
-func (d *DataService) RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
+func (d *PostgresService) RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
 	query := psql.Select("id, hostname, target, data").From(table)
@@ -206,7 +180,7 @@ func (d *DataService) RetrieveByTarget(table string, fields map[string]string, t
 	return d.DB.Query(context.Background(), sql, args...)
 }
 
-func (d *DataService) RetrieveTargets() ([]string, error) {
+func (d *PostgresService) RetrieveTargets() ([]string, error) {
 
 	var targets []string
 	rows, err := d.DB.Query(context.Background(), "SELECT DISTINCT target FROM assets")
@@ -225,7 +199,7 @@ func (d *DataService) RetrieveTargets() ([]string, error) {
 	return targets, err
 }
 
-func (d *DataService) Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error) {
+func (d *PostgresService) Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error) {
 
 	sql := fmt.Sprintf(`
 		INSERT INTO %v (id, hostname, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
@@ -252,7 +226,7 @@ func (d *DataService) Save(table, pipe, id string, data Data, result map[string]
 	return false, nil
 }
 
-func (d *DataService) SaveAlert(pipe string, id, msg, alertType string) error {
+func (d *PostgresService) SaveAlert(pipe string, id, msg, alertType string) error {
 
 	sql := `INSERT INTO alerts (type, pipe, ident, message) VALUES ($1, $2, $3, $4)`
 

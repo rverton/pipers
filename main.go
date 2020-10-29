@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"os"
@@ -21,6 +22,7 @@ const LOGFILE = "/tmp/pipers.log"
 func main() {
 	var err error
 	var pipes []pipe.Pipe
+	var ds db.DataService
 
 	log.SetLevel(log.DebugLevel)
 	log.SetFormatter(&log.TextFormatter{
@@ -36,6 +38,7 @@ func main() {
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")
+	noDb := flag.Bool("noDb", false, "do not use a database, read from stdin and print results")
 	flag.Parse()
 
 	if *single == "" {
@@ -52,23 +55,32 @@ func main() {
 		pipes = append(pipes, pipe)
 	}
 
-	// make DB available global
-	dbconn, err := db.InitDb(os.Getenv("DATABASE_URL"))
-	if err != nil {
-		log.Fatal(err)
+	if *noDb {
+		ds = &db.PrintService{}
+	} else {
+		dbconn, err := db.InitDb(os.Getenv("DATABASE_URL"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer dbconn.Close()
+
+		if err := db.SetupDb(dbconn, pipe.Tables(pipes)); err != nil {
+			log.Fatal(err)
+		}
+
+		ds = &db.PostgresService{DB: dbconn}
 	}
-	defer dbconn.Close()
 
-	if err := db.SetupDb(dbconn, pipe.Tables(pipes)); err != nil {
-		log.Fatal(err)
-	}
-
-	ds := &db.DataService{DB: dbconn}
-
-	if *workerMode {
+	switch {
+	case *noDb:
+		log.Info("database-less mode, reading from stdin")
+		if err := process(pipes, ds); err != nil {
+			log.Error(err)
+		}
+	case *workerMode:
 		log.Info("starting worker")
 		startWorker(pipes, ds)
-	} else {
+	default:
 		log.Info("starting scheduler")
 		if err := scheduler(pipes, ds); err != nil {
 			log.Error(err)
@@ -77,9 +89,31 @@ func main() {
 
 }
 
+func process(pipes []pipe.Pipe, ds db.DataService) error {
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		for _, p := range pipes {
+			data := db.Data{
+				Hostname: scanner.Text(),
+				Data:     make(map[string]interface{}),
+			}
+
+			if err := pipe.Process(context.Background(), p, data, ds); err != nil {
+				log.WithFields(log.Fields{
+					"pipe": p.Name,
+				}).Errorf("pipe handle failed: %v", err)
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // worker will use asynq and redis to listen for pipe tasks to be handled
 // a server is started for each pipe with a specific queue
-func startWorker(pipes []pipe.Pipe, ds *db.DataService) {
+func startWorker(pipes []pipe.Pipe, ds db.DataService) {
 	var wg sync.WaitGroup
 	opts := asynq.RedisClientOpt{Addr: "localhost:6379"}
 
@@ -117,7 +151,7 @@ func startWorker(pipes []pipe.Pipe, ds *db.DataService) {
 }
 
 // scheduler will load all pipes and add tasks to a queue
-func scheduler(pipes []pipe.Pipe, ds *db.DataService) error {
+func scheduler(pipes []pipe.Pipe, ds db.DataService) error {
 	redisClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
 
 	var wg sync.WaitGroup

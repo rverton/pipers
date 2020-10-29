@@ -17,7 +17,7 @@ import (
 
 var SCHEDULER_SLEEP = time.Minute * 1
 
-func runAsFile(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
+func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 	targets, err := ds.RetrieveTargets()
 	if err != nil {
 		return fmt.Errorf("retrieving targets failed")
@@ -115,7 +115,7 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 	return nil
 }
 
-func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
+func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 	interval, _ := p.Interval()
 
 	rows, err := ds.Retrieve(p.Input.Table, p.Input.Filter, interval)
@@ -172,7 +172,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds *db.DataService) error {
 
 // run will be executed for each pipe and is reponsible for
 // scheduling tasks periodically
-func run(p pipe.Pipe, client *asynq.Client, ds *db.DataService, wg *sync.WaitGroup) {
+func run(p pipe.Pipe, client *asynq.Client, ds db.DataService, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
