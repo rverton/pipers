@@ -33,7 +33,7 @@ type Pipe struct {
 		AsFile string `yaml:"as_file"`
 	}
 	Command string `yaml:"cmd"`
-	Filter  string
+	Filter  map[string]string
 	Output  struct {
 		Table    string
 		Ident    string
@@ -153,18 +153,29 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return data
 }
 
-func (p Pipe) filter(vm *otto.Otto, output string) (bool, error) {
+func (p Pipe) filter(vm *otto.Otto, output string) (bool, string, error) {
 	err := vm.Set("output", output)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
-	value, err := vm.Run(p.Filter)
-	if err != nil {
-		return false, err
+	for name, f := range p.Filter {
+		value, err := vm.Run(f)
+		if err != nil {
+			return false, "", err
+		}
+
+		result, err := value.ToBoolean()
+		if err != nil {
+			return false, "", err
+		}
+
+		if result {
+			return true, name, nil
+		}
 	}
 
-	return value.ToBoolean()
+	return false, "", nil
 }
 
 func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error {
@@ -207,7 +218,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 			continue
 		}
 
-		filter, err := p.filter(vm, s)
+		filter, filterName, err := p.filter(vm, s)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err,
@@ -217,7 +228,8 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 		if filter {
 			log.WithFields(log.Fields{
-				"pipe": p.Name,
+				"pipe":   p.Name,
+				"filter": filterName,
 			}).Debug("filtered output")
 			continue
 		}

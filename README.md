@@ -96,3 +96,48 @@ worker: 1
 alert_msg: New domain '${.output}'
 ```
 
+### http service detection with custom filter
+
+```
+name: http_detect
+
+# load data from assets table
+input:
+  table: assets
+
+# pipe hostname into httpx
+cmd: echo ${.input.hostname} | httpx -json -response-in-json -ports=80,81,300,443,3128,8080,8081
+
+# define two output filters, the last stmt must return a bool
+filter:
+  # if there are more than 3 results, skip all others
+  amount: |
+    var count = (count || 0)+1; count>3
+  waf: |
+    var data = JSON.parse(output)
+    data.response.includes('Sorry, you have been blocked') 
+
+output:
+  table: services
+  ident: ${.outputJson.url}|${index .outputJson "status-code"}|${index .outputJson "content-length"}
+  data:
+    service: http
+    webserver: ${.outputJson.webserver}
+    url: ${.outputJson.url}
+    title: ${.outputJson.title}
+    response: ${.outputJson.serverResponse}
+    status: ${index .outputJson "status-code"}
+
+# alert message contains the url, title and server (from headers)
+alert_msg: ${.outputJson.url} - TITLE '${.outputJson.title}' - SERVER ${.outputJson.webserver}
+
+# run this pipe every 12h on every row from input table
+interval: 12h
+
+# cancel task after httpx runs for more than 10m
+timeout: 10m
+
+# run 10 workers for this pipe
+worker: 10
+```
+
