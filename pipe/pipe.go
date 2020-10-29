@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig"
+	"github.com/robertkrimen/otto"
 	"github.com/rverton/pipers/db"
 	"github.com/rverton/pipers/notification"
 	log "github.com/sirupsen/logrus"
@@ -32,6 +33,7 @@ type Pipe struct {
 		AsFile string `yaml:"as_file"`
 	}
 	Command string `yaml:"cmd"`
+	Filter  string
 	Output  struct {
 		Table    string
 		Ident    string
@@ -151,6 +153,20 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 	return data
 }
 
+func (p Pipe) filter(vm *otto.Otto, output string) (bool, error) {
+	err := vm.Set("output", output)
+	if err != nil {
+		return false, err
+	}
+
+	value, err := vm.Run(p.Filter)
+	if err != nil {
+		return false, err
+	}
+
+	return value.ToBoolean()
+}
+
 func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error {
 	start := time.Now()
 
@@ -178,12 +194,31 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 	var notifyText string
 
+	// initialize new JS engine for filtering
+	vm := otto.New()
+
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		b := scanner.Bytes()
+		s := string(b)
 
 		// skip if result is empty
-		if strings.TrimSpace(string(b)) == "" {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+
+		filter, err := p.filter(vm, s)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err,
+			}).Error("filtering failed")
+			continue
+		}
+
+		if filter {
+			log.WithFields(log.Fields{
+				"pipe": p.Name,
+			}).Debug("filtered output")
 			continue
 		}
 
