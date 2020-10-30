@@ -38,6 +38,7 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 		asynq.Unique(timeout),
 		asynq.Queue(p.Name),
 		asynq.Timeout(timeout),
+		asynq.MaxRetry(3),
 	)
 	return err
 }
