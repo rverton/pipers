@@ -9,13 +9,13 @@ import (
 
 type PrintService struct{}
 
-func (p *PrintService) AddTask(t Task) {}
+func (p *PrintService) AddTask(t Task) error { return nil }
 
 func (p *PrintService) ShouldRun(pipe, ident string, interval time.Duration) bool {
 	return true
 }
 
-func (p *PrintService) Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (p *PrintService) Retrieve(table, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
 	return nil, nil
 }
 

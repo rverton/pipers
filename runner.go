@@ -118,7 +118,7 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 	interval, _ := p.Interval()
 
-	rows, err := ds.Retrieve(p.Input.Table, p.Input.Filter, interval)
+	rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, interval)
 	if err != nil {
 		return fmt.Errorf("could not retrieve input: %v", err)
 	}

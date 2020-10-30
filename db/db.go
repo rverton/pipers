@@ -35,9 +35,9 @@ type Task struct {
 }
 
 type DataService interface {
-	AddTask(t Task)
+	AddTask(t Task) error
 	ShouldRun(pipe, ident string, interval time.Duration) bool
-	Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error)
+	Retrieve(table, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error)
 	RetrieveTargets() ([]string, error)
 	RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error)
 	Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error)
@@ -62,13 +62,16 @@ func InitDb(uri string) (*pgxpool.Pool, error) {
 	return db, err
 }
 
-func (d *PostgresService) AddTask(t Task) {
+func (d *PostgresService) AddTask(t Task) error {
 	if _, err := d.DB.Exec(context.Background(), "INSERT INTO tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
 		log.WithFields(log.Fields{
 			"task":  t,
 			"error": err,
 		}).Error("adding task failed")
+		return err
 	}
+
+	return nil
 }
 
 func (d *PostgresService) ShouldRun(pipe, ident string, interval time.Duration) bool {
@@ -126,22 +129,22 @@ func SetupDb(db *pgxpool.Pool, tables []string) error {
 // and only where no tasks is found (or the task is older than the passed
 // interval. note that this function is vulnerable to sqli, but because
 // a pipe in itself executes user commands, it does not matter here.
-func (d *PostgresService) Retrieve(table string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (d *PostgresService) Retrieve(table string, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			A.id, A.hostname, A.target, A.data
 		FROM 
 			%v A
 			LEFT JOIN tasks T
-			ON A.id = T.ident AND A.pipe = T.pipe AND T.created_at > NOW() - $1::interval
+			ON A.id = T.ident AND T.pipe = $1 AND T.created_at > NOW() - $2::interval
 		WHERE T.ident IS NULL
 	`, table)
 
 	var filterQuery []string
-	args := []interface{}{interval}
+	args := []interface{}{pipeName, interval}
 
 	// filter from pipe
-	count := 1
+	count := 2
 	for k, v := range fields {
 		filterQuery = append(
 			filterQuery,

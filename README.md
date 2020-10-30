@@ -80,7 +80,7 @@ The interval (how often this pipe should be run for each row) is set to 12h, whi
 task will be cancelled after 1m. Additionally, an alert message can be defined which
 is saved with the alert and used for notification hooks.
 
-```
+```yaml
 name: domains_crobat
 input:
   table: assets
@@ -99,7 +99,7 @@ alert_msg: New domain '${.output}'
 
 ### http service detection with custom filter
 
-```
+```yaml
 name: http_detect
 
 # load data from assets table
