@@ -13,7 +13,7 @@ import (
 
 const DB_URI = "dbname=pipers_test"
 
-var TABLES = []string{"assets", "results", "services"}
+var TABLES = []string{"domains", "services"}
 
 func testConnect() (*pgxpool.Pool, func()) {
 
@@ -22,7 +22,7 @@ func testConnect() (*pgxpool.Pool, func()) {
 		panic(err)
 	}
 
-	for _, table := range append(TABLES, "alerts", "tasks") {
+	for _, table := range append(TABLES, "pipers_alerts", "pipers_tasks") {
 		_, err = db.Exec(context.Background(), fmt.Sprintf("DROP TABLE IF EXISTS %v", table))
 		if err != nil {
 			panic(err)
@@ -51,7 +51,7 @@ func TestSchemaCreation(t *testing.T) {
 		t.Errorf("error creating schema: %v", err)
 	}
 
-	tables := append(TABLES, "tasks", "alerts")
+	tables := append(TABLES, "pipers_tasks", "pipers_alerts")
 
 	for _, table := range tables {
 		if !tableExists(db, table) {
@@ -71,13 +71,13 @@ func TestShouldRun(t *testing.T) {
 	target := "rv"
 	filter := make(map[string]string)
 
-	_, err := db.Exec(context.Background(), "INSERT INTO assets (id, hostname, target, pipe) VALUES ($1, $2, $3, 'manual')", host, ident, target)
+	_, err := db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe) VALUES ($1, $2, $3, 'manual')", host, ident, target)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("retrieves asset", func(t *testing.T) {
-		rows, err := ds.Retrieve("assets", "http_detect", filter, time.Second*0)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Second*0)
 		if err != nil {
 			t.Error(err)
 		}
@@ -93,7 +93,7 @@ func TestShouldRun(t *testing.T) {
 	})
 
 	t.Run("retrieves asset with interval", func(t *testing.T) {
-		rows, err := ds.Retrieve("assets", "http_detect", filter, time.Hour*48)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Hour*48)
 		if err != nil {
 			t.Error(err)
 		}
@@ -117,10 +117,10 @@ func TestShouldRun(t *testing.T) {
 			t.Error(err)
 		}
 		defer func() {
-			db.Exec(context.Background(), "DELETE FROM tasks")
+			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("assets", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -142,10 +142,10 @@ func TestShouldRun(t *testing.T) {
 			t.Error(err)
 		}
 		defer func() {
-			db.Exec(context.Background(), "DELETE FROM tasks")
+			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("assets", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -167,10 +167,10 @@ func TestShouldRun(t *testing.T) {
 			t.Error(err)
 		}
 		defer func() {
-			db.Exec(context.Background(), "DELETE FROM tasks")
+			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("assets", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}

@@ -14,11 +14,15 @@ type slackRequestBody struct {
 	Text string `json:"text"`
 }
 
-func SlackNotification(msg string) error {
+func Notify(msg string) error {
 
-	if SlackWebhook == "" {
-		return nil
+	if SlackWebhook != "" {
+		return slackNotification(msg)
 	}
+	return nil
+}
+
+func slackNotification(msg string) error {
 
 	slackBody, _ := json.Marshal(slackRequestBody{Text: msg})
 	req, err := http.NewRequest(http.MethodPost, SlackWebhook, bytes.NewBuffer(slackBody))

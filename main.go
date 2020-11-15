@@ -95,7 +95,7 @@ func process(pipes []pipe.Pipe, ds db.DataService) error {
 	for scanner.Scan() {
 		for _, p := range pipes {
 			data := db.Data{
-				Hostname: scanner.Text(),
+				Asset: scanner.Text(),
 				Data:     make(map[string]interface{}),
 			}
 

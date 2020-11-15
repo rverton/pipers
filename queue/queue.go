@@ -70,12 +70,12 @@ func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
 		return err
 	}
 
-	// do not enqueue invalid hostnames
-	if !pipe.IsValidHost(data.Hostname) {
+	// do not enqueue invalid assets
+	if !pipe.IsValidHost(data.Asset) {
 		log.WithFields(log.Fields{
 			"pipe":     p.Name,
-			"hostname": data.Hostname,
-		}).Info("skipping hostname pointing to blacklisted IP")
+			"asset": data.Asset,
+		}).Info("skipping asset pointing to blacklisted IP")
 		return nil
 	}
 

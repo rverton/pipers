@@ -38,10 +38,10 @@ type Pipe struct {
 	Command string `yaml:"cmd"`
 	Filter  map[string]string
 	Output  struct {
-		Table    string
-		Ident    string
-		Hostname string
-		Data     map[string]string
+		Table string
+		Ident string
+		Asset string
+		Data  map[string]string
 	}
 	IntervalValue string `yaml:"interval"` // time.Duration format
 	TimeoutValue  string `yaml:"timeout"`  // time.Duration format
@@ -74,7 +74,7 @@ func (p Pipe) Ident(tplData map[string]interface{}) (string, error) {
 
 func (p Pipe) AlertMsg(tplData map[string]interface{}) (string, error) {
 	if p.AlertMsgValue == "" {
-		return p.Ident(tplData)
+		return "", nil
 	}
 
 	return Tpl(p.AlertMsgValue, tplData)
@@ -146,12 +146,12 @@ func (p Pipe) outputMap(tplData map[string]interface{}) map[string]interface{} {
 		data[name] = s
 	}
 
-	s, err := Tpl(p.Output.Hostname, tplData)
+	s, err := Tpl(p.Output.Asset, tplData)
 	if err != nil {
-		log.WithFields(log.Fields{"template": p.Output.Hostname}).Errorf("cant create template: %v", err)
+		log.WithFields(log.Fields{"template": p.Output.Asset}).Errorf("cant create template: %v", err)
 	}
 
-	data["hostname"] = s
+	data["asset"] = s
 
 	return data
 }
@@ -191,9 +191,9 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 	}
 
 	log.WithFields(log.Fields{
-		"pipe":     p.Name,
-		"cmd":      cmd.String(),
-		"hostname": data.Hostname,
+		"pipe":  p.Name,
+		"cmd":   cmd.String(),
+		"asset": data.Asset,
 	}).Debug("executing")
 
 	stdout, err := cmd.StdoutPipe()
@@ -264,17 +264,17 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 			continue
 		}
 
-		hostname := data.Hostname
-		if v, ok := output["hostname"].(string); ok && v != "" {
-			hostname = v
+		asset := data.Asset
+		if v, ok := output["asset"].(string); ok && v != "" {
+			asset = v
 		}
 
-		if err := ValidateDomain(hostname); err != nil {
+		if err := ValidateDomain(asset); err != nil {
 			log.WithFields(log.Fields{
-				"pipe":     p.Name,
-				"ident":    id,
-				"hostname": hostname,
-			}).Errorf("invalid hostname, skipping")
+				"pipe":  p.Name,
+				"ident": id,
+				"asset": asset,
+			}).Errorf("invalid asset, skipping")
 
 			continue
 		}
@@ -300,7 +300,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 					"pipe":  p.Name,
 					"error": err,
 				}).Errorf("generating alert failed")
-			} else {
+			} else if msg != "" {
 				notifyText += msg + "\n"
 			}
 
@@ -316,7 +316,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 	if len(notifyText) > 0 {
 		notifyText = fmt.Sprintf("*[%v]*\n%v", p.Name, notifyText)
-		if err := notification.SlackNotification(notifyText); err != nil {
+		if err := notification.Notify(notifyText); err != nil {
 			log.Errorf("slack webhook failed: %v", err)
 		}
 	}
@@ -340,7 +340,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 	log.WithFields(log.Fields{
 		"pipe":     p.Name,
-		"hostname": data.Hostname,
+		"asset":    data.Asset,
 		"duration": time.Since(start),
 	}).Info("execution finished")
 
@@ -388,10 +388,10 @@ func LoadMultiple(glob string) ([]Pipe, error) {
 	return pipes, err
 }
 
-// mapInput enriches the data struct with a hostname and a target
+// mapInput enriches the data struct with a asset and a target
 func MapInput(data db.Data) map[string]interface{} {
 	input := data.Data
-	input["hostname"] = data.Hostname
+	input["asset"] = data.Asset
 	input["target"] = data.Target
 	return input
 }

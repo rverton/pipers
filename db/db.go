@@ -14,11 +14,11 @@ import (
 )
 
 type Data struct {
-	Id       string                 `json:"id"`
-	Hostname string                 `json:"hostname"`
-	Target   string                 `json:"target"`
-	Pipe     string                 `json:"pipe"`
-	Data     map[string]interface{} `json:"data"` // JSONB
+	Id     string                 `json:"id"`
+	Asset  string                 `json:"asset"`
+	Target string                 `json:"target"`
+	Pipe   string                 `json:"pipe"`
+	Data   map[string]interface{} `json:"data"` // JSONB
 }
 
 type Alert struct {
@@ -63,7 +63,7 @@ func InitDb(uri string) (*pgxpool.Pool, error) {
 }
 
 func (d *PostgresService) AddTask(t Task) error {
-	if _, err := d.DB.Exec(context.Background(), "INSERT INTO tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
+	if _, err := d.DB.Exec(context.Background(), "INSERT INTO pipers_tasks (pipe, ident, note) VALUES ($1, $2, $3)", t.Pipe, t.Ident, t.Note); err != nil {
 		log.WithFields(log.Fields{
 			"task":  t,
 			"error": err,
@@ -79,7 +79,7 @@ func (d *PostgresService) ShouldRun(pipe, ident string, interval time.Duration) 
 
 	err := d.DB.QueryRow(
 		context.Background(),
-		"SELECT 1 from tasks WHERE pipe = $1 and ident = $2 and created_at > NOW() - $3::interval LIMIT 1",
+		"SELECT 1 from pipers_tasks WHERE pipe = $1 and ident = $2 and created_at > NOW() - $3::interval LIMIT 1",
 		pipe,
 		ident,
 		interval.Truncate(time.Millisecond).String(),
@@ -132,10 +132,10 @@ func SetupDb(db *pgxpool.Pool, tables []string) error {
 func (d *PostgresService) Retrieve(table string, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
 	sql := fmt.Sprintf(`
 		SELECT
-			A.id, A.hostname, A.target, A.data
+			A.id, A.asset, A.target, A.data
 		FROM 
 			%v A
-			LEFT JOIN tasks T
+			LEFT JOIN pipers_tasks T
 			ON A.id = T.ident AND T.pipe = $1 AND T.created_at > NOW() - $2::interval
 		WHERE T.ident IS NULL
 	`, table)
@@ -167,7 +167,7 @@ func (d *PostgresService) Retrieve(table string, pipeName string, fields map[str
 func (d *PostgresService) RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 
-	query := psql.Select("id, hostname, target, data").From(table)
+	query := psql.Select("id, asset, target, data").From(table)
 	query = query.Where("target = ?", target)
 
 	for k, v := range fields {
@@ -186,7 +186,7 @@ func (d *PostgresService) RetrieveByTarget(table string, fields map[string]strin
 func (d *PostgresService) RetrieveTargets() ([]string, error) {
 
 	var targets []string
-	rows, err := d.DB.Query(context.Background(), "SELECT DISTINCT target FROM assets")
+	rows, err := d.DB.Query(context.Background(), "SELECT DISTINCT target FROM domains")
 	if err != nil {
 		return targets, err
 	}
@@ -205,19 +205,19 @@ func (d *PostgresService) RetrieveTargets() ([]string, error) {
 func (d *PostgresService) Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error) {
 
 	sql := fmt.Sprintf(`
-		INSERT INTO %v (id, hostname, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO %v (id, asset, target, pipe, data) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT DO NOTHING;
 	`, table)
 
-	// if a hostname is provided, use the provided one if valid
-	hostname := data.Hostname
-	if v, ok := result["hostname"].(string); ok && v != "" {
-		hostname = v
+	// if a asset is provided, use the provided one if valid
+	asset := data.Asset
+	if v, ok := result["asset"].(string); ok && v != "" {
+		asset = v
 	}
 
-	delete(result, "hostname")
+	delete(result, "asset")
 
-	upsert, err := d.DB.Exec(context.Background(), sql, id, hostname, data.Target, pipe, result)
+	upsert, err := d.DB.Exec(context.Background(), sql, id, asset, data.Target, pipe, result)
 	if err != nil {
 		return false, err
 	}
@@ -231,7 +231,7 @@ func (d *PostgresService) Save(table, pipe, id string, data Data, result map[str
 
 func (d *PostgresService) SaveAlert(pipe string, id, msg, alertType string) error {
 
-	sql := `INSERT INTO alerts (type, pipe, ident, message) VALUES ($1, $2, $3, $4)`
+	sql := `INSERT INTO pipers_alerts (type, pipe, ident, message) VALUES ($1, $2, $3, $4)`
 
 	_, err := d.DB.Exec(context.Background(), sql, alertType, pipe, id, msg)
 	if err != nil {

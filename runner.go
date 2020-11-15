@@ -54,7 +54,7 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 
 		count := 0
 		for rows.Next() {
-			err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
+			err := rows.Scan(&data.Id, &data.Asset, &data.Target, &data.Data)
 			if err != nil {
 				return fmt.Errorf("retrieving pipe input data failed: %v", err)
 			}
@@ -130,7 +130,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 		count++
 
 		data := db.Data{}
-		err := rows.Scan(&data.Id, &data.Hostname, &data.Target, &data.Data)
+		err := rows.Scan(&data.Id, &data.Asset, &data.Target, &data.Data)
 		if err != nil {
 			return fmt.Errorf("scanning pipe input failed: %v", err)
 		}

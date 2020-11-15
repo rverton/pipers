@@ -49,8 +49,8 @@ func isPrivateIp(ip net.IP) bool {
 	return false
 }
 
-// validHost checks if a hostname is resolvable and is not blacklisted
-func IsValidHost(hostname string) bool {
+// validHost checks if a asset is resolvable and is not blacklisted
+func IsValidHost(asset string) bool {
 
 	const timeout = 3 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -58,7 +58,7 @@ func IsValidHost(hostname string) bool {
 
 	var r net.Resolver
 
-	ips, err := r.LookupIP(ctx, "ip4", hostname)
+	ips, err := r.LookupIP(ctx, "ip4", asset)
 	if err != nil {
 		return true
 	}

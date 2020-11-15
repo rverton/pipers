@@ -49,7 +49,7 @@ in the pipe itself via the `worker` field.
 
 ### No-DB
 
-Using this mode no database will be used and data (hostname) is loaded from stdin.
+Using this mode no database will be used and data (asset) is loaded from stdin.
 This allows to debug pipes and print the result.
 
 ```
@@ -86,11 +86,11 @@ input:
   table: assets
   filter:
     scope: true
-cmd: curl https://sonar.omnisint.io/subdomains/${.input.hostname} -s | jq -r -c '.[]'
+cmd: curl https://sonar.omnisint.io/subdomains/${.input.asset} -s | jq -r -c '.[]'
 output:
   table: assets
   ident: ${.output}
-  hostname: ${.output}
+  asset: ${.output}
 interval: 12h
 timeout: 1m
 worker: 1
@@ -106,8 +106,8 @@ name: http_detect
 input:
   table: assets
 
-# pipe hostname into httpx
-cmd: echo ${.input.hostname} | httpx -json -response-in-json -ports=80,81,300,443,3128,8080,8081
+# pipe asset into httpx
+cmd: echo ${.input.asset} | httpx -json -response-in-json -ports=80,81,300,443,3128,8080,8081
 
 # define two output filters, the last stmt must return a bool
 filter:
