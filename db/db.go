@@ -169,6 +169,7 @@ func (d *PostgresService) RetrieveByTarget(table string, fields map[string]strin
 
 	query := psql.Select("id, asset, target, data").From(table)
 	query = query.Where("target = ?", target)
+	query = query.Where("exclude = false")
 
 	for k, v := range fields {
 		query = query.Where("(data ->> ?) = ?", k, v)
