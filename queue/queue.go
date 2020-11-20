@@ -70,10 +70,18 @@ func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
 		return err
 	}
 
+	// add task log
+	if err := ds.AddTask(db.Task{
+		Pipe:  p.Name,
+		Ident: data.Id,
+	}); err != nil {
+		log.WithFields(log.Fields{"error": err}).Errorf("unable to add task")
+	}
+
 	// do not enqueue invalid assets
 	if !pipe.IsValidHost(data.Asset) {
 		log.WithFields(log.Fields{
-			"pipe":     p.Name,
+			"pipe":  p.Name,
 			"asset": data.Asset,
 		}).Info("skipping asset pointing to blacklisted IP")
 		return nil

@@ -18,25 +18,18 @@ import (
 var SCHEDULER_SLEEP = time.Minute * 1
 
 func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
+	logger := log.WithField("pipe", p.Name)
+
 	targets, err := ds.RetrieveTargets()
 	if err != nil {
 		return fmt.Errorf("retrieving targets failed")
 	}
-
-	log.WithFields(log.Fields{
-		"targets": len(targets),
-		"pipe":    p.Name,
-	}).Debug("retrieved targets for as_file")
 
 	interval, _ := p.Interval()
 
 	for _, target := range targets {
 
 		if !ds.ShouldRun(p.Name, target, interval) {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": target,
-			}).Info("task as_file too recent, skipping")
 			continue
 		}
 
@@ -63,9 +56,7 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 				"input": pipe.MapInput(data),
 			})
 			if err != nil {
-				log.WithFields(log.Fields{
-					"error": err,
-				}).Info("template for as_file failed")
+				logger.WithField("error", err).Error("template for as_file failed")
 				continue
 			}
 
@@ -89,21 +80,19 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 
 		// enqueue task
 		if err := queue.EnqueuePipe(p, newData, client); err != nil {
-			if errors.Is(err, asynq.ErrDuplicateTask) {
-				log.WithFields(log.Fields{
-					"pipe": p.Name,
-				}).Info("enqueueing skipped, task already enqueued")
-			} else {
+			if !errors.Is(err, asynq.ErrDuplicateTask) {
 				return fmt.Errorf("enqueuing failed: %v", err)
 			}
 		} else {
-			log.WithFields(log.Fields{
-				"pipe":    p.Name,
+			logger.WithFields(log.Fields{
 				"inputId": data.Id,
 				"target":  target,
 				"lines":   count,
 			}).Info("enqueued as_file")
 
+			// add task now to prevent this resource intensive operation
+			// to be run too often
+			// TODO: move to retriever and add a redis check for this task
 			ds.AddTask(db.Task{
 				Pipe:  p.Name,
 				Ident: target,
@@ -118,14 +107,16 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 	interval, _ := p.Interval()
 
+	logger := log.WithFields(log.Fields{"pipe": p.Name})
+
 	rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, interval)
 	if err != nil {
 		return fmt.Errorf("could not retrieve input: %v", err)
 	}
 
-	var tasks []db.Task
-
 	count := 0
+	countAdded := 0
+
 	for rows.Next() {
 		count++
 
@@ -137,34 +128,18 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 
 		// enqueue task
 		if err := queue.EnqueuePipe(p, data, client); err != nil {
-			if errors.Is(err, asynq.ErrDuplicateTask) {
-				log.WithFields(log.Fields{
-					"pipe": p.Name,
-				}).Debug("enqueueing skipped, task already enqueued")
-			} else {
+			if !errors.Is(err, asynq.ErrDuplicateTask) {
 				return fmt.Errorf("enqueueing failed: %v", err)
 			}
 		} else {
-			log.WithFields(log.Fields{
-				"pipe":    p.Name,
-				"inputId": data.Id,
-			}).Info("enqueued")
-
-			tasks = append(tasks, db.Task{
-				Pipe:  p.Name,
-				Ident: data.Id,
-			})
+			logger.WithField("ident", data.Id).Info("enqueued")
+			countAdded += 1
 		}
 	}
 
-	for _, t := range tasks {
-		ds.AddTask(t)
-	}
-
-	log.WithFields(log.Fields{
-		"pipe":    p.Name,
-		"tasks":   len(tasks),
-		"skipped": count - len(tasks),
+	logger.WithFields(log.Fields{
+		"enqueued": countAdded,
+		"skipped":  count - countAdded,
 	}).Info("scheduler run")
 
 	return nil
