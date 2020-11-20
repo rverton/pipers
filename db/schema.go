@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS %v (
 	asset text not null,
 	target text not null,
 	pipe text not null,
+	exclude boolean default false,
 	data jsonb,
 	created_at TIMESTAMP DEFAULT NOW()
 );

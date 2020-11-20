@@ -76,6 +76,11 @@ func TestShouldRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	_, err = db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe, exclude) VALUES ($1, $2, $3, 'manual', true)", host+"2", ident+"2", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	t.Run("retrieves asset", func(t *testing.T) {
 		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Second*0)
 		if err != nil {

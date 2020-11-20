@@ -137,7 +137,7 @@ func (d *PostgresService) Retrieve(table string, pipeName string, fields map[str
 			%v A
 			LEFT JOIN pipers_tasks T
 			ON A.id = T.ident AND T.pipe = $1 AND T.created_at > NOW() - $2::interval
-		WHERE T.ident IS NULL
+		WHERE T.ident IS NULL AND A.exclude = false
 	`, table)
 
 	var filterQuery []string

@@ -10,7 +10,6 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 	"github.com/rverton/pipers/db"
-	"github.com/rverton/pipers/notification"
 	"github.com/rverton/pipers/pipe"
 	"github.com/rverton/pipers/queue"
 	log "github.com/sirupsen/logrus"
@@ -33,8 +32,6 @@ func main() {
 	if err = godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file")
 	}
-
-	notification.SlackWebhook = os.Getenv("SLACK_WEBHOOK")
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")
@@ -71,6 +68,12 @@ func main() {
 		ds = &db.PostgresService{DB: dbconn}
 	}
 
+	ro := asynq.RedisClientOpt{Addr: "localhost:6379"}
+
+	if os.Getenv("REDIS") != "" {
+		ro = asynq.RedisClientOpt{Addr: os.Getenv("REDIS")}
+	}
+
 	switch {
 	case *noDb:
 		log.Info("database-less mode, reading from stdin")
@@ -79,10 +82,10 @@ func main() {
 		}
 	case *workerMode:
 		log.Info("starting worker")
-		startWorker(pipes, ds)
+		startWorker(pipes, ro, ds)
 	default:
 		log.Info("starting scheduler")
-		if err := scheduler(pipes, ds); err != nil {
+		if err := scheduler(pipes, ro, ds); err != nil {
 			log.Error(err)
 		}
 	}
@@ -96,7 +99,7 @@ func process(pipes []pipe.Pipe, ds db.DataService) error {
 		for _, p := range pipes {
 			data := db.Data{
 				Asset: scanner.Text(),
-				Data:     make(map[string]interface{}),
+				Data:  make(map[string]interface{}),
 			}
 
 			if err := pipe.Process(context.Background(), p, data, ds); err != nil {
@@ -113,9 +116,8 @@ func process(pipes []pipe.Pipe, ds db.DataService) error {
 
 // worker will use asynq and redis to listen for pipe tasks to be handled
 // a server is started for each pipe with a specific queue
-func startWorker(pipes []pipe.Pipe, ds db.DataService) {
+func startWorker(pipes []pipe.Pipe, ro asynq.RedisClientOpt, ds db.DataService) {
 	var wg sync.WaitGroup
-	opts := asynq.RedisClientOpt{Addr: "localhost:6379"}
 
 	for _, p := range pipes {
 		if p.Worker <= 0 {
@@ -124,7 +126,7 @@ func startWorker(pipes []pipe.Pipe, ds db.DataService) {
 
 		log.WithFields(log.Fields{"pipe": p.Name, "worker": p.Worker}).Debug("starting queue")
 
-		srv := asynq.NewServer(opts, asynq.Config{
+		srv := asynq.NewServer(ro, asynq.Config{
 			Concurrency:  p.Worker,
 			ErrorHandler: asynq.ErrorHandlerFunc(queue.ErrorHandler),
 			Logger:       log.StandardLogger(),
@@ -151,8 +153,8 @@ func startWorker(pipes []pipe.Pipe, ds db.DataService) {
 }
 
 // scheduler will load all pipes and add tasks to a queue
-func scheduler(pipes []pipe.Pipe, ds db.DataService) error {
-	redisClient := asynq.NewClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+func scheduler(pipes []pipe.Pipe, ro asynq.RedisClientOpt, ds db.DataService) error {
+	redisClient := asynq.NewClient(ro)
 
 	var wg sync.WaitGroup
 	for _, p := range pipes {
