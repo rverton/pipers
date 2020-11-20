@@ -1,0 +1,132 @@
+---
+- hosts: pipers
+  tasks:
+
+  - name: ensure apt cache is up to date
+    apt: update_cache=yes
+    become: yes
+
+  - name: Install required packages
+    apt:
+      pkg:
+      - gcc
+      - acl
+      - git
+      - build-essential
+      - make
+      - python3-pip
+      - python3-virtualenv
+    become: yes
+
+  - name: Create src folder
+    file:
+      path: /home/{{ansible_user}}/src
+      state: directory
+      mode: '0755'
+
+  - name: Install go (if not current)
+    unarchive:
+      src: "https://dl.google.com/go/{{ go_version }}.linux-amd64.tar.gz"
+      dest: /usr/local
+      remote_src: yes
+    become: yes
+
+  - name: set path for go
+    lineinfile:
+      dest: "/etc/profile"
+      state: present
+      line: "export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin"
+    register: gopath
+    become: yes
+
+  - name: Clone pipers
+    git:
+      repo: "git@github.com:rverton/pipers"
+      dest: /home/{{ ansible_user }}/src/pipers
+
+  - name: Clone btools
+    git:
+      repo: "git@github.com:rverton/btools"
+      dest: /home/{{ ansible_user }}/src/btools
+
+  - name: Install pipers
+    shell: /usr/local/go/bin/go install
+    args:
+      chdir: /home/{{ansible_user}}/src/pipers
+
+  - name: Install btools
+    command: /usr/local/go/bin/go install ./cmd/...
+    args:
+      chdir: /home/{{ansible_user}}/src/btools
+
+  - name: Install subfinder
+    command: /usr/local/go/bin/go get -u github.com/projectdiscovery/subfinder/v2/cmd/subfinder
+
+  - name: Install subfinder
+    command: /usr/local/go/bin/go get -u github.com/projectdiscovery/httpx/cmd/httpx
+
+  - name: Install ffuf
+    command: /usr/local/go/bin/go get -u github.com/ffuf/ffuf
+
+  - name: Clone massdns
+    git:
+      repo: "https://github.com/blechschmidt/massdns"
+      dest: /home/{{ ansible_user }}/src/massdns
+
+  - name: Build massdns
+    command: make
+    args:
+      chdir: /home/{{ansible_user}}/src/massdns
+      creates: /home/{{ansible_user}}/src/massdns/bin/massdns
+
+  - name: Clone dnsgen
+    git:
+      repo: "https://github.com/ProjectAnte/dnsgen"
+      dest: /home/{{ ansible_user }}/src/dnsgen
+
+  - name: Install dnsgen virtualenv and requirements
+    pip:
+      requirements: /home/{{ansible_user}}/src/dnsgen/requirements.txt
+      virtualenv: /home/{{ansible_user}}/src/dnsgen/venv
+      virtualenv_python: python3
+
+  - name: Install dnsgen
+    command: /home/{{ansible_user}}/src/dnsgen/venv/bin/python setup.py install
+    args:
+      chdir: /home/{{ansible_user}}/src/dnsgen
+      creates: /home/{{ansible_user}}/src/dnsgen/venv/bin/dnsgen
+
+  - name: Copy resources
+    copy: src=../../resources dest=/home/{{ansible_user}}
+
+  - name: Copy env file
+    copy: src=../../.env dest=/home/{{ansible_user}}/.env
+
+  - name: Setup env
+    become: no
+    lineinfile:
+      dest: "/home/{{ansible_user}}/.env"
+      regexp: "{{ item.regexp }}" 
+      line: "{{ item.line }}" 
+    with_items:
+      - { regexp: "^DNSGEN_PATH=", line: "DNSGEN_PATH=/home/{{ansible_user}}/src/dnsgen/venv/bin/dnsgen" }
+
+  # - name: start worker
+  #   service:
+  #     name: pipers-worker
+  #     state: restarted
+  #   become: yes
+
+  # - name: Setup worker for assets
+  #   template:
+  #     src: service.env.j2
+  #     dest: /lib/systemd/system/pipers-worker.service
+  #     mode: 655
+  #   become: yes
+
+  # - name: Enable service
+  #   service:
+  #     name: pipers-worker
+  #     enabled: yes
+  #   become: yes
+
