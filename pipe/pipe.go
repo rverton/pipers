@@ -183,6 +183,7 @@ func (p Pipe) filter(vm *otto.Otto, output string) (bool, string, error) {
 
 func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error {
 	start := time.Now()
+	logger := log.WithField("pipe", p.Name)
 
 	cmd, err := p.prepareCommand(ctx, data)
 
@@ -190,8 +191,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 		return fmt.Errorf("cant prepare pipe command: %v\n", err)
 	}
 
-	log.WithFields(log.Fields{
-		"pipe":  p.Name,
+	logger.WithFields(log.Fields{
 		"cmd":   cmd.String(),
 		"asset": data.Asset,
 	}).Debug("executing")
@@ -223,17 +223,12 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 		filter, filterName, err := p.filter(vm, s)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"error": err,
-			}).Error("filtering failed, skipping output")
+			logger.WithField("error", err).Error("filtering failed, skipping output")
 			continue
 		}
 
 		if filter {
-			log.WithFields(log.Fields{
-				"pipe":   p.Name,
-				"filter": filterName,
-			}).Debug("filtered output")
+			logger.WithField("filter", filterName).Debug("filtered output")
 			continue
 		}
 
@@ -242,24 +237,18 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 		id, err := p.Ident(tplData)
 		if err != nil {
-			log.WithFields(log.Fields{"error": err}).Error(err)
+			logger.WithField("error", err).Error(err)
 			continue
 		}
 
 		if id == "" {
-			log.WithFields(log.Fields{
-				"pipe":       p.Name,
-				"identField": p.Output.Ident,
-			}).Error("resulting ident is empty, skipping")
+			logger.WithField("identField", p.Output.Ident).Error("resulting ident is empty, skipping")
 			continue
 		}
 
 		// only print output in debug mode
 		if p.Debug {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": id,
-			}).Infof("pipe debug: %+v", output)
+			log.WithField("ident", id).Infof("pipe debug: %+v", output)
 
 			continue
 		}
@@ -270,8 +259,7 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 		}
 
 		if err := ValidateDomain(asset); err != nil {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
+			logger.WithFields(log.Fields{
 				"ident": id,
 				"asset": asset,
 			}).Errorf("invalid asset, skipping")
@@ -281,34 +269,20 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 
 		inserted, err := ds.Save(p.Output.Table, p.Name, id, data, output)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": id,
-			}).Errorf("unable to save: %v", err)
+			logger.WithField("ident", id).Errorf("unable to save: %v", err)
 			continue
 		}
 
 		if inserted {
-			log.WithFields(log.Fields{
-				"pipe":  p.Name,
-				"ident": id,
-			}).Infof("created document")
-
 			msg, err := p.AlertMsg(tplData)
 			if err != nil {
-				log.WithFields(log.Fields{
-					"pipe":  p.Name,
-					"error": err,
-				}).Errorf("generating alert failed")
+				log.WithField("error", err).Errorf("generating alert failed")
 			} else if msg != "" {
 				notifyText += msg + "\n"
 			}
 
 			if err := ds.SaveAlert(p.Name, id, msg, "CREATED"); err != nil {
-				log.WithFields(log.Fields{
-					"pipe":  p.Name,
-					"ident": id,
-				}).Errorf("cant create alert: %v", err)
+				log.WithField("ident", id).Errorf("cant create alert: %v", err)
 			}
 		}
 
@@ -322,24 +296,21 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 	}
 
 	if err := cmd.Wait(); err != nil {
-		log.WithFields(log.Fields{
-			"pipe": p.Name,
-		}).Errorf("pipe command failed: %v", err)
+		logger.Errorf("pipe command failed: %v", err)
 	}
 
 	// clean up if input was passed as a file
 	if p.Input.AsFile != "" {
 		if v, ok := data.Data["as_file"].(string); ok {
 			if err := os.Remove(v); err != nil {
-				log.Errorf("could not remove as_file tmp file: %v", err)
+				logger.Errorf("could not remove as_file tmp file: %v", err)
 			}
 		} else {
-			log.Errorf("could not get as_file entry to remove temp file")
+			logger.Errorf("could not get as_file entry to remove temp file")
 		}
 	}
 
-	log.WithFields(log.Fields{
-		"pipe":     p.Name,
+	logger.WithFields(log.Fields{
 		"asset":    data.Asset,
 		"duration": time.Since(start),
 	}).Info("execution finished")

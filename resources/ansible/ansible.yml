@@ -59,8 +59,15 @@
     args:
       chdir: /home/{{ansible_user}}/src/btools
 
-  - name: Cleanup sourcecode from pipers and btools
-    command: rm -rf /home/{{ansible_user}}/src/btools /home/{{ansible_user}}/src/pipers
+  - name: Cleanup
+    file:
+      state: absent
+      path: "/home/{{ansible_user}}/src/btools"
+
+  - name: Cleanup
+    file:
+      state: absent
+      path: "/home/{{ansible_user}}/src/pipers"
 
   - name: Install subfinder
     command: /usr/local/go/bin/go get -u github.com/projectdiscovery/subfinder/v2/cmd/subfinder
