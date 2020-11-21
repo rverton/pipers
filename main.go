@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"sync"
 
 	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 	"github.com/rverton/pipers/db"
+	"github.com/rverton/pipers/notification"
 	"github.com/rverton/pipers/pipe"
 	"github.com/rverton/pipers/queue"
 	log "github.com/sirupsen/logrus"
@@ -37,6 +39,11 @@ func main() {
 	single := flag.String("single", "", "path of a single pipe to execute")
 	noDb := flag.Bool("noDb", false, "do not use a database, read from stdin and print results")
 	flag.Parse()
+
+	if os.Getenv("SLACK_WEBHOOK") != "" {
+		fmt.Println("setting slack")
+		notification.SlackWebhook = os.Getenv("SLACK_WEBHOOK")
+	}
 
 	if *single == "" {
 		pipes, err = pipe.LoadMultiple("./resources/pipes/*.yml")

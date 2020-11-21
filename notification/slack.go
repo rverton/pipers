@@ -5,27 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"time"
 )
 
-var slackWebhook string
+var SlackWebhook string
 
 type slackRequestBody struct {
 	Text string `json:"text"`
 }
 
-func init() {
-	s := os.Getenv("SLACK_WEBHOOK")
-
-	if s != "" {
-		slackWebhook = s
-	}
-}
-
 func Notify(msg string) error {
 
-	if slackWebhook != "" {
+	if SlackWebhook != "" {
 		return slackNotification(msg)
 	}
 	return nil
@@ -34,7 +25,7 @@ func Notify(msg string) error {
 func slackNotification(msg string) error {
 
 	slackBody, _ := json.Marshal(slackRequestBody{Text: msg})
-	req, err := http.NewRequest(http.MethodPost, slackWebhook, bytes.NewBuffer(slackBody))
+	req, err := http.NewRequest(http.MethodPost, SlackWebhook, bytes.NewBuffer(slackBody))
 	if err != nil {
 		return err
 	}
