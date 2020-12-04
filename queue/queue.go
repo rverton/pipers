@@ -32,10 +32,11 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	m["pipe"] = string(pipeBytes)
 
 	timeout, _ := p.Timeout()
+	interval, _ := p.Interval()
 
 	_, err = client.Enqueue(
 		asynq.NewTask(TASK_PIPE, m),
-		asynq.Unique(timeout),
+		asynq.Unique(interval),
 		asynq.Queue(p.Name),
 		asynq.Timeout(timeout),
 		asynq.MaxRetry(3),
