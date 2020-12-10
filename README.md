@@ -1,6 +1,6 @@
 # pipers, a pipeline oriented automation toolkit
 
-Define single tasks in yaml files and chain them asynchronous.
+Define tasks in yaml files and chain them asynchronously.
 
 ## Concept
 
@@ -10,7 +10,7 @@ Define single tasks in yaml files and chain them asynchronous.
 
 Example: The pipe with the name *http_detect* takes *domains* as input, passes them to *httpx* and persists the results:
 
-```
+```yaml
 name: http_detect
 
 input:
