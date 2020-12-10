@@ -1,6 +1,6 @@
 # pipers, a pipeline oriented automation toolkit
 
-Define tasks in yaml files and chain them asynchronously.
+Define tasks in yaml files and chain them asynchronously. This is a powerfull way of glueing your tools together in a simple and efficient way to create workflows.
 
 ## Concept
 
@@ -48,12 +48,14 @@ worker: 10
 
 ## Configuration and Usage
 
-A `.env` file is used:
+A `.env` file is used for basic config stuff:
 
 ```
 DATABASE_URL="database=pipers"
 SLACK_WEBHOOK="https://hooks.slack.com/services/XXX/YYY"
 ```
+
+The database schema is created automatically.
 
 There are three modes which can be run:
 
