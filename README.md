@@ -1,30 +1,59 @@
 # pipers, a pipeline oriented automation toolkit
 
-Define single pipes in yaml files and chain them.
+Define single tasks in yaml files and chain them asynchronous.
 
 ## Concept
 
-* each pipe is defined in a `yml` file, takes an (filtered) input and returns an output
-* each input is passed to a command, each output is then persisted
-* each output can specify an `ident` so new entries can be detected
+* each *pipe* is defined in a `yml` file, takes an (filtered) input and returns an output (string or json)
+* each input to a pipe is passed to a system command, each output is then returned and persisted
+* each output specifies an `ident`, so new changes can be detected
+
+Example: The pipe with the name *http_detect* takes *domains* as input, passes them to *httpx* and persists the results:
+
+```
+name: http_detect
+
+input:
+  table: domains
+
+cmd: echo ${.input.asset} | httpx -silent -json -response-in-json
+
+output:
+  table: services
+  ident: ${.outputJson.url}|${index .outputJson "status-code"}
+  data:
+    service: http
+    webserver: ${.outputJson.webserver}
+    url: ${.outputJson.url}
+    title: ${.outputJson.title}
+    status: ${index .outputJson "status-code"}
+
+interval: 24h
+timeout: 10m
+worker: 10
+```
 
 ## Features
 
-* Queueing
+* Scalable, all tasks are queueing (over redis), each pipe can define how many workers are started
+* Cyclic scanning (how often should each row be re-queued)
 * Task uniqueness guaranteed (same task/pipe + data cant be executed at the same time twice)
-* Maximum amount of workers per pipe configurable
-* IP blacklist checks (private IPs or special networks)
-
-## Pipe definition
-* the complete output is available under `${.output}`. If it is json, it is available under `${.outputJson}`
-* `filters` can extend a pipe with (javascript) logic
+* IP blacklist checks (private IPs and special networks)
+* Pipe filtering through javascript
 
 ## Installation
 
-* Install redis
+* Install redis and postgres
 * `go build`
 
-## Usage
+## Configuration and Usage
+
+A `.env` file is used:
+
+```
+DATABASE_URL="database=pipers"
+SLACK_WEBHOOK="https://hooks.slack.com/services/XXX/YYY"
+```
 
 There are three modes which can be run:
 
@@ -60,16 +89,6 @@ This allows to debug pipes and print the result.
 
 * `-single pipe/to/load.yml` will load only a single pipe.
 * To test a pipe in production, `debug: true` can be set in the yaml file so results are not saved in the database.
-
-## Configuration
-
-The following environment variables (which can also be put in a `.env` file) can be used
-for configuration:
-
-```
-PGDATABASE=database_name
-SLACK_WEBHOOK="https://hooks.slack.com/services/XXXXXX/XXXXXX/XXXXXX"
-```
 
 ## Examples
 
