@@ -1,4 +1,5 @@
 dump.rdb
 pipers
 resources
+misc/ansible/inventory.yml
 .env

@@ -98,7 +98,7 @@
     pip:
       requirements: /home/{{ansible_user}}/src/dnsgen/requirements.txt
       virtualenv: /home/{{ansible_user}}/src/dnsgen/venv
-      virtualenv_python: python3
+      virtualenv_python: python
 
   - name: Install dnsgen
     command: /home/{{ansible_user}}/src/dnsgen/venv/bin/python setup.py install

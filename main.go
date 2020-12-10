@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"flag"
-	"fmt"
 	"os"
 	"sync"
 
@@ -41,7 +40,6 @@ func main() {
 	flag.Parse()
 
 	if os.Getenv("SLACK_WEBHOOK") != "" {
-		fmt.Println("setting slack")
 		notification.SlackWebhook = os.Getenv("SLACK_WEBHOOK")
 	}
 
