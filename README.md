@@ -1,6 +1,11 @@
-# pipers, a file-based task automation toolkit
+# pipers, a file-based task automation toolkit for monitoring
 
-Define tasks in yaml files and chain them asynchronously. This is a powerfull way of glueing your tools together in a simple and efficient way to create workflows.
+Define tasks in yaml files and chain them asynchronously. This is a powerfull way
+to glue your tools together in a simple and efficient way. By using unique identifiers
+for each record, it is possible to monitor for new records or changes.
+
+Each task is called a *pipe* because you can pipe your tasks together to create
+whole workflows.
 
 ## Concept
 
@@ -37,8 +42,8 @@ worker: 10
 
 ## Features
 
-* Scalable, all tasks are queueing (over redis), each pipe can define how many workers are started
-* Cyclic scanning (how often should each row be re-queued)
+* Scalable, all tasks are queued (over redis), each pipe can define how many workers are started
+* Perodic/timed scanning (how often should each row be re-queued)
 * Task uniqueness guaranteed (same task/pipe + data cant be executed at the same time twice)
 * IP blacklist checks (private IPs and special networks)
 * Pipe filtering through javascript
@@ -108,8 +113,8 @@ This workflow will then run continuously and monitor for new assets/services/pat
 ### Setup simple subdomain enumeration
 
 Let's begin with the first step in our chain, enumerating assets. We want to get all
-"scope" domains from the domains table and pass it to a simple API rerieving subdomains.
-For this we will define a simple `filter`, pass it to curl and put the parsed result in
+"scope" domains from the domains table and pass it to a simple API retrieving subdomains.
+For this we will define a simple *filter*, pass it to `curl` and put the parsed result in
 a new table `output`.
 
 The interval (how often this pipe should be run for each row) is set to 12h, while the
