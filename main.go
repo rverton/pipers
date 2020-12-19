@@ -36,11 +36,16 @@ func main() {
 
 	workerMode := flag.Bool("worker", false, "start in worker mode")
 	single := flag.String("single", "", "path of a single pipe to execute")
+	blacklist := flag.String("blacklist", "./resources/ips-exclude.txt", "file of IPs to exclude")
 	noDb := flag.Bool("noDb", false, "do not use a database, read from stdin and print results")
 	flag.Parse()
 
 	if os.Getenv("SLACK_WEBHOOK") != "" {
 		notification.SlackWebhook = os.Getenv("SLACK_WEBHOOK")
+	}
+
+	if err := pipe.LoadBlacklist(*blacklist); err != nil {
+		log.Fatalf("could not load IP blacklist: %v", err)
 	}
 
 	if *single == "" {

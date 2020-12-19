@@ -14,10 +14,10 @@ import (
 
 var privateIPBlocks []*net.IPNet
 
-func init() {
-	file, err := os.Open("./resources/ips-exclude.txt")
+func LoadBlacklist(path string) error {
+	file, err := os.Open(path)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer file.Close()
 
@@ -26,13 +26,14 @@ func init() {
 		cidr := scanner.Text()
 		_, block, err := net.ParseCIDR(cidr)
 		if err != nil {
-			panic(fmt.Errorf("parse error on %q: %v", cidr, err))
+			return fmt.Errorf("parse error on %q: %v", cidr, err)
 		}
 		privateIPBlocks = append(privateIPBlocks, block)
 	}
 
 	log.WithFields(log.Fields{"networks": len(privateIPBlocks)}).Info("blacklisted IPs loaded")
 
+	return nil
 }
 
 func isPrivateIp(ip net.IP) bool {
