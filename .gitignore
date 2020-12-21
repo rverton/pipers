@@ -1,0 +1,6 @@
+dump.rdb
+pipers
+resources
+misc/ansible/
+.env
+dist/
