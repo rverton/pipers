@@ -31,12 +31,13 @@ const TIMEOUT_DEFAULT = "1h"
 type Pipe struct {
 	Name  string
 	Input struct {
-		Table  string
-		Filter map[string]string
-		AsFile string `yaml:"as_file"`
+		Table     string
+		Filter    map[string]string
+		Threshold map[string]string
+		AsFile    string `yaml:"as_file"`
 	}
-	Command string `yaml:"cmd"`
-	Filter  map[string]string
+	Command string            `yaml:"cmd"`
+	Filter  map[string]string // JS filter
 	Output  struct {
 		Table string
 		Ident string

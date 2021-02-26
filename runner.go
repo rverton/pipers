@@ -109,7 +109,7 @@ func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 
 	logger := log.WithFields(log.Fields{"pipe": p.Name})
 
-	rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, interval)
+	rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, p.Input.Threshold, interval)
 	if err != nil {
 		return fmt.Errorf("could not retrieve input: %v", err)
 	}

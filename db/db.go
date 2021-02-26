@@ -37,7 +37,7 @@ type Task struct {
 type DataService interface {
 	AddTask(t Task) error
 	ShouldRun(pipe, ident string, interval time.Duration) bool
-	Retrieve(table, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error)
+	Retrieve(table, pipeName string, fields map[string]string, threshold map[string]string, interval time.Duration) (pgx.Rows, error)
 	RetrieveTargets() ([]string, error)
 	RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error)
 	Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error)
@@ -129,7 +129,7 @@ func SetupDb(db *pgxpool.Pool, tables []string) error {
 // and only where no tasks is found (or the task is older than the passed
 // interval. note that this function is vulnerable to sqli, but because
 // a pipe in itself executes user commands, it does not matter here.
-func (d *PostgresService) Retrieve(table string, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (d *PostgresService) Retrieve(table string, pipeName string, fields map[string]string, threshold map[string]string, interval time.Duration) (pgx.Rows, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			A.id, A.asset, A.target, A.data
@@ -141,10 +141,12 @@ func (d *PostgresService) Retrieve(table string, pipeName string, fields map[str
 	`, table)
 
 	var filterQuery []string
-	args := []interface{}{pipeName, interval}
+	var thresholdQuery []string
 
-	// filter from pipe
+	args := []interface{}{pipeName, interval}
 	count := 2
+
+	// boolean filter from pipe
 	for k, v := range fields {
 		filterQuery = append(
 			filterQuery,
@@ -160,6 +162,23 @@ func (d *PostgresService) Retrieve(table string, pipeName string, fields map[str
 	}
 
 	sql = fmt.Sprintf("%v%v", sql, strings.Join(filterQuery, " AND "))
+
+	// threshold from pipe
+	for k, v := range threshold {
+		thresholdQuery = append(
+			thresholdQuery,
+			fmt.Sprintf("(data ->> $%v)::NUMERIC > $%v::NUMERIC", count+1, count+2),
+		)
+		args = append(args, k)
+		args = append(args, v)
+		count++
+	}
+
+	if len(thresholdQuery) > 0 {
+		sql = fmt.Sprintf("%v AND ", sql)
+	}
+
+	sql = fmt.Sprintf("%v%v", sql, strings.Join(thresholdQuery, " AND "))
 
 	return d.DB.Query(context.Background(), sql, args...)
 }

@@ -15,7 +15,7 @@ func (p *PrintService) ShouldRun(pipe, ident string, interval time.Duration) boo
 	return true
 }
 
-func (p *PrintService) Retrieve(table, pipeName string, fields map[string]string, interval time.Duration) (pgx.Rows, error) {
+func (p *PrintService) Retrieve(table, pipeName string, fields map[string]string, threshold map[string]string, interval time.Duration) (pgx.Rows, error) {
 	return nil, nil
 }
 

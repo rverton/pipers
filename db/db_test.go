@@ -59,7 +59,6 @@ func TestSchemaCreation(t *testing.T) {
 		}
 	}
 }
-
 func TestShouldRun(t *testing.T) {
 	db, _ := testConnect()
 	// defer teardown()
@@ -70,19 +69,21 @@ func TestShouldRun(t *testing.T) {
 	ident := "robinverton.de"
 	target := "rv"
 	filter := make(map[string]string)
+	threshold := make(map[string]string)
 
 	_, err := db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe) VALUES ($1, $2, $3, 'manual')", host, ident, target)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// excluded asset
 	_, err = db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe, exclude) VALUES ($1, $2, $3, 'manual', true)", host+"2", ident+"2", target)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("retrieves asset", func(t *testing.T) {
-		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Second*0)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, threshold, time.Second*0)
 		if err != nil {
 			t.Error(err)
 		}
@@ -98,7 +99,7 @@ func TestShouldRun(t *testing.T) {
 	})
 
 	t.Run("retrieves asset with interval", func(t *testing.T) {
-		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Hour*48)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, threshold, time.Hour*48)
 		if err != nil {
 			t.Error(err)
 		}
@@ -109,7 +110,7 @@ func TestShouldRun(t *testing.T) {
 		}
 
 		if count != 1 {
-			t.Errorf("want = 1, got = %v", count)
+			t.Errorf("want = 3, got = %v", count)
 		}
 	})
 
@@ -125,7 +126,7 @@ func TestShouldRun(t *testing.T) {
 			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, threshold, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -150,7 +151,7 @@ func TestShouldRun(t *testing.T) {
 			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, threshold, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -175,7 +176,7 @@ func TestShouldRun(t *testing.T) {
 			db.Exec(context.Background(), "DELETE FROM pipers_tasks")
 		}()
 
-		rows, err := ds.Retrieve("domains", "http_detect", filter, time.Minute*1)
+		rows, err := ds.Retrieve("domains", "http_detect", filter, threshold, time.Minute*1)
 		if err != nil {
 			t.Error(err)
 		}
@@ -187,6 +188,70 @@ func TestShouldRun(t *testing.T) {
 			t.Errorf("want = %v, got = %v", want, got)
 		}
 	})
+}
+
+func TestShouldRunInputFilter(t *testing.T) {
+	db, _ := testConnect()
+	// defer teardown()
+
+	ds := &PostgresService{DB: db}
+
+	host := "robinverton.de"
+	ident := "robinverton.de"
+	target := "rv"
+	filter := make(map[string]string)
+	threshold := make(map[string]string)
+
+	// asset with score of 100 and scope true
+	_, err := db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe, data) VALUES ($1, $2, $3, 'manual', $4)", host+"3", ident+"3", target, `{"score":100, "scope":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// asset with score of 200
+	_, err = db.Exec(context.Background(), "INSERT INTO domains (id, asset, target, pipe, data) VALUES ($1, $2, $3, 'manual', $4)", host+"4", ident+"4", target, `{"score":200}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("retrieves asset with filter", func(t *testing.T) {
+		f := map[string]string{
+			"scope": "true",
+		}
+		rows, err := ds.Retrieve("domains", "http_detect", f, threshold, time.Second*0)
+		if err != nil {
+			t.Error(err)
+		}
+
+		count := 0
+		for rows.Next() {
+			count++
+		}
+
+		if count != 1 {
+			t.Errorf("want = 1, got = %v", count)
+		}
+	})
+
+	t.Run("retrieves asset with threshold", func(t *testing.T) {
+		thresh := map[string]string{
+			"score": "101",
+		}
+		rows, err := ds.Retrieve("domains", "http_detect", filter, thresh, time.Second*0)
+		if err != nil {
+			t.Error(err)
+		}
+
+		count := 0
+		for rows.Next() {
+			count++
+		}
+
+		if count != 1 {
+			t.Errorf("want = 1, got = %v", count)
+		}
+	})
+
 }
 
 func testCountRows(r pgx.Rows) int {
