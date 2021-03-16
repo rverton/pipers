@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 	"unicode/utf8"
 
@@ -127,7 +128,15 @@ func ValidateDomain(name string) error {
 func Tables(pipes []Pipe) []string {
 	tableMap := make(map[string]struct{})
 	for _, p := range pipes {
-		tableMap[p.Input.Table] = struct{}{}
+
+		if p.Input.Table != "" {
+			tableMap[p.Input.Table] = struct{}{}
+		}
+
+		if p.Input.File != "" {
+			fmt.Println(filepath.Base(p.Input.File))
+			tableMap[filepath.Base(p.Input.File)] = struct{}{}
+		}
 		tableMap[p.Output.Table] = struct{}{}
 	}
 

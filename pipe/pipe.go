@@ -31,6 +31,7 @@ const TIMEOUT_DEFAULT = "1h"
 type Pipe struct {
 	Name  string
 	Input struct {
+		File      string
 		Table     string
 		Filter    map[string]string
 		Threshold map[string]string
@@ -84,6 +85,10 @@ func (p Pipe) AlertMsg(tplData map[string]interface{}) (string, error) {
 func (p Pipe) validate() error {
 	if _, err := p.Interval(); err != nil {
 		return fmt.Errorf("invalid date interval: %w", err)
+	}
+
+	if p.Command == "" {
+		return fmt.Errorf("empty command")
 	}
 
 	return nil

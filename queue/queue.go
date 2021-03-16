@@ -71,6 +71,10 @@ func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
 		return err
 	}
 
+	if data.Data == nil {
+		data.Data = make(map[string]interface{})
+	}
+
 	// add task log
 	if err := ds.AddTask(db.Task{
 		Pipe:  p.Name,

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-const DB_URI = "dbname=pipers_test"
+const DB_URI = "host=localhost user=postgres password=postgres dbname=pipers_test"
 
 var TABLES = []string{"domains", "services"}
 

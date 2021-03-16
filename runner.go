@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -106,34 +108,74 @@ func runAsFile(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 
 func runSingle(p pipe.Pipe, client *asynq.Client, ds db.DataService) error {
 	interval, _ := p.Interval()
-
-	logger := log.WithFields(log.Fields{"pipe": p.Name})
-
-	rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, p.Input.Threshold, interval)
-	if err != nil {
-		return fmt.Errorf("could not retrieve input: %v", err)
-	}
-
 	count := 0
 	countAdded := 0
 
-	for rows.Next() {
-		count++
+	logger := log.WithFields(log.Fields{"pipe": p.Name})
 
-		data := db.Data{}
-		err := rows.Scan(&data.Id, &data.Asset, &data.Target, &data.Data)
+	// retrieve data from file?
+	if p.Input.File != "" {
+
+		file, err := os.Open(p.Input.File)
 		if err != nil {
-			return fmt.Errorf("scanning pipe input failed: %v", err)
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			if !ds.ShouldRun(p.Name, line, interval) {
+				continue
+			}
+
+			// enqueue task
+			data := db.Data{
+				Id:     line,
+				Asset:  line,
+				Target: filepath.Base(p.Input.File),
+			}
+
+			if err := queue.EnqueuePipe(p, data, client); err != nil {
+				if !errors.Is(err, asynq.ErrDuplicateTask) {
+					return fmt.Errorf("enqueueing failed: %v", err)
+				}
+			} else {
+				logger.WithField("ident", data.Id).Info("enqueued")
+				countAdded += 1
+			}
 		}
 
-		// enqueue task
-		if err := queue.EnqueuePipe(p, data, client); err != nil {
-			if !errors.Is(err, asynq.ErrDuplicateTask) {
-				return fmt.Errorf("enqueueing failed: %v", err)
+		if err := scanner.Err(); err != nil {
+			log.Fatal(err)
+		}
+
+	} else {
+
+		rows, err := ds.Retrieve(p.Input.Table, p.Name, p.Input.Filter, p.Input.Threshold, interval)
+		if err != nil {
+			return fmt.Errorf("could not retrieve input: %v", err)
+		}
+
+		for rows.Next() {
+			count++
+
+			data := db.Data{}
+			err := rows.Scan(&data.Id, &data.Asset, &data.Target, &data.Data)
+			if err != nil {
+				return fmt.Errorf("scanning pipe input failed: %v", err)
 			}
-		} else {
-			logger.WithField("ident", data.Id).Info("enqueued")
-			countAdded += 1
+
+			// enqueue task
+			if err := queue.EnqueuePipe(p, data, client); err != nil {
+				if !errors.Is(err, asynq.ErrDuplicateTask) {
+					return fmt.Errorf("enqueueing failed: %v", err)
+				}
+			} else {
+				logger.WithField("ident", data.Id).Info("enqueued")
+				countAdded += 1
+			}
 		}
 	}
 
