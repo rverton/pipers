@@ -115,7 +115,8 @@ func SetupDb(db *pgxpool.Pool, tables []string) error {
 	for _, name := range tables {
 
 		// create table with SQL_CREATE_DATA_TBL
-		_, err := db.Exec(context.Background(), fmt.Sprintf(SQL_CREATE_DATA_TBL, name, name, name, name, name))
+		sql := fmt.Sprintf(SQL_CREATE_DATA_TBL, name, name, name, name, name)
+		_, err := db.Exec(context.Background(), sql)
 		if err != nil {
 			return fmt.Errorf("unable to create %v table: %v", name, err)
 		}

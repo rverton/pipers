@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"time"
 	"unicode/utf8"
 
@@ -129,15 +128,14 @@ func Tables(pipes []Pipe) []string {
 	tableMap := make(map[string]struct{})
 	for _, p := range pipes {
 
-		if p.Input.Table != "" {
-			tableMap[p.Input.Table] = struct{}{}
+		tableMap[p.Output.Table] = struct{}{}
+
+		// do not add input tables for file based pipes
+		if p.Input.File != "" {
+			continue
 		}
 
-		if p.Input.File != "" {
-			fmt.Println(filepath.Base(p.Input.File))
-			tableMap[filepath.Base(p.Input.File)] = struct{}{}
-		}
-		tableMap[p.Output.Table] = struct{}{}
+		tableMap[p.Input.Table] = struct{}{}
 	}
 
 	var i []string
