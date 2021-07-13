@@ -302,7 +302,13 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 	}
 
 	if err := cmd.Wait(); err != nil {
-		logger.Errorf("pipe command failed: %v", err)
+		if err.Error() == "signal: killed" {
+			logger.WithFields(log.Fields{
+				"cmd": cmd.String(),
+			}).Info("pipe timed out")
+		} else {
+			logger.Errorf("pipe command failed: %v", err)
+		}
 	}
 
 	// clean up if input was passed as a file

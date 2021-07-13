@@ -39,7 +39,7 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 		asynq.Unique(interval),
 		asynq.Queue(p.Name),
 		asynq.Timeout(timeout),
-		asynq.MaxRetry(3),
+		asynq.MaxRetry(1),
 	)
 	return err
 }
@@ -109,5 +109,11 @@ func ErrorHandler(ctx context.Context, task *asynq.Task, err error) {
 		// retry exhausted
 		err = fmt.Errorf("retry exhausted for task %s: %w", task.Type, err)
 	}
+
+	// if the task timed out, skip error message
+	if err == context.DeadlineExceeded {
+		return
+	}
+
 	log.Errorf("handling queue task failed: %v\n", err)
 }
