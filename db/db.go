@@ -39,6 +39,7 @@ type DataService interface {
 	ShouldRun(pipe, ident string, interval time.Duration) bool
 	Retrieve(table, pipeName string, fields map[string]string, threshold map[string]string, interval time.Duration) (pgx.Rows, error)
 	RetrieveTargets() ([]string, error)
+	RetrieveBlocked() ([]string, error)
 	RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error)
 	Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error)
 	SaveAlert(pipe string, id, msg, alertType string) error
@@ -221,6 +222,25 @@ func (d *PostgresService) RetrieveTargets() ([]string, error) {
 	}
 
 	return targets, err
+}
+
+func (d *PostgresService) RetrieveBlocked() ([]string, error) {
+
+	var blocked []string
+	rows, err := d.DB.Query(context.Background(), "SELECT DISTINCT asset FROM domains WHERE exclude = true")
+	if err != nil {
+		return blocked, err
+	}
+
+	for rows.Next() {
+		var t string
+		if err = rows.Scan(&t); err != nil {
+			return blocked, err
+		}
+		blocked = append(blocked, t)
+	}
+
+	return blocked, err
 }
 
 func (d *PostgresService) Save(table, pipe, id string, data Data, result map[string]interface{}) (bool, error) {

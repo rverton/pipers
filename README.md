@@ -237,3 +237,13 @@ INSERT INTO domains (ident, asset, target, data) values ('example3.com','example
 
 The previously started scheduler will pick this entries up automatically and queue them for processing.
 
+### Excluding assets
+
+It is possible to exclude assets (and subdomains) by setting the exclude flag in the `domains` table to `true`.
+
+Example to exclude `foo.bar.com` (and all subdomains of this domain):
+
+```sql
+INSERT INTO domains (ident, asset, target, exclude) values ('example.com','example.com', 'example', true);
+```
+

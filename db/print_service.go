@@ -23,6 +23,10 @@ func (p *PrintService) RetrieveTargets() ([]string, error) {
 	return []string{}, nil
 }
 
+func (p *PrintService) RetrieveBlocked() ([]string, error) {
+	return []string{}, nil
+}
+
 func (p *PrintService) RetrieveByTarget(table string, fields map[string]string, target string) (pgx.Rows, error) {
 	return nil, nil
 }

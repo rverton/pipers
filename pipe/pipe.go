@@ -217,6 +217,12 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 	// initialize new JS engine for filtering
 	vm := otto.New()
 
+	// blocked domains
+	blocked, err := ds.RetrieveBlocked()
+	if err != nil {
+		return fmt.Errorf("cant retrieve blocklist: %v\n", err)
+	}
+
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		b := scanner.Bytes()
@@ -264,12 +270,20 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 			asset = v
 		}
 
-		if err := ValidateDomain(asset); err != nil {
+		if err := validateDomain(asset); err != nil {
 			logger.WithFields(log.Fields{
 				"ident": id,
 				"asset": asset,
-			}).Errorf("invalid asset, skipping")
+			}).Infof("invalid asset, skipping")
 
+			continue
+		}
+
+		if isBlockedDomain(asset, blocked) {
+			logger.WithFields(log.Fields{
+				"ident": id,
+				"asset": asset,
+			}).Infof("blocked asset, skipping")
 			continue
 		}
 

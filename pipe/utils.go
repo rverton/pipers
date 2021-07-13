@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -71,7 +72,17 @@ func IsValidHost(asset string) bool {
 	return !isPrivateIp(ips[0])
 }
 
-func ValidateDomain(name string) error {
+func isBlockedDomain(name string, blocked []string) bool {
+	for _, blockedAsset := range blocked {
+		if strings.HasSuffix(name, blockedAsset) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func validateDomain(name string) error {
 	switch {
 	case len(name) == 0:
 		return nil // an empty domain name will result in a cookie without a domain restriction
