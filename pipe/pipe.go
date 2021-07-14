@@ -315,24 +315,27 @@ func Process(ctx context.Context, p Pipe, data db.Data, ds db.DataService) error
 		}
 	}
 
+	defer func() {
+		// clean up if input was passed as a file
+		if p.Input.AsFile != "" {
+			if v, ok := data.Data["as_file"].(string); ok {
+				if err := os.Remove(v); err != nil {
+					logger.Errorf("could not remove as_file tmp file: %v", err)
+				}
+			} else {
+				logger.Errorf("could not get as_file entry to remove temp file")
+			}
+		}
+
+	}()
+
 	if err := cmd.Wait(); err != nil {
 		if err.Error() == "signal: killed" {
 			logger.WithFields(log.Fields{
 				"cmd": cmd.String(),
 			}).Info("pipe timed out")
 		} else {
-			logger.Errorf("pipe command failed: %v", err)
-		}
-	}
-
-	// clean up if input was passed as a file
-	if p.Input.AsFile != "" {
-		if v, ok := data.Data["as_file"].(string); ok {
-			if err := os.Remove(v); err != nil {
-				logger.Errorf("could not remove as_file tmp file: %v", err)
-			}
-		} else {
-			logger.Errorf("could not get as_file entry to remove temp file")
+			return err
 		}
 	}
 

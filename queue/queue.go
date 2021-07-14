@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -44,30 +45,41 @@ func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	return err
 }
 
-// handler will be called when a job is received from the queue
-func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
+func parsePayload(t *asynq.Task) (pipe.Pipe, db.Data, error) {
+	var data db.Data
+	var p pipe.Pipe
+
 	pipeData, err := t.Payload.GetString("pipe")
 	if err != nil {
 		log.Errorf("getting task payload failed: %v", err)
-		return err
+		return p, data, err
 	}
 	dataData, err := t.Payload.GetString("data")
 	if err != nil {
 		log.Errorf("getting task payload failed: %v", err)
-		return err
+		return p, data, err
 	}
 
-	var p pipe.Pipe
 	if err := json.Unmarshal([]byte(pipeData), &p); err != nil {
 		err := fmt.Errorf("unable to unmarshal pipe: %v", err)
 		log.WithFields(log.Fields{"error": err}).Errorf("unable to unmarshal pipe")
-		return err
+		return p, data, err
 	}
 
-	var data db.Data
 	if err := json.Unmarshal([]byte(dataData), &data); err != nil {
 		err := fmt.Errorf("unable to unmarshal pipe: %v", err)
 		log.Error(err)
+		return p, data, err
+	}
+
+	return p, data, nil
+}
+
+// handler will be called when a job is received from the queue
+func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
+	p, data, err := parsePayload(t)
+	if err != nil {
+		log.Errorf("getting task payload failed: %v", err)
 		return err
 	}
 
@@ -93,16 +105,13 @@ func Handler(ctx context.Context, t *asynq.Task, ds db.DataService) error {
 	}
 
 	if err := pipe.Process(ctx, p, data, ds); err != nil {
-		log.WithFields(log.Fields{
-			"pipe": p.Name,
-		}).Errorf("pipe handle failed: %v", err)
 		return err
 	}
 
 	return nil
 }
 
-func ErrorHandler(ctx context.Context, task *asynq.Task, err error) {
+func ErrorHandler(ctx context.Context, task *asynq.Task, err error, saveFailed string) {
 	retried, _ := asynq.GetRetryCount(ctx)
 	maxRetry, _ := asynq.GetMaxRetry(ctx)
 	if retried >= maxRetry {
@@ -116,4 +125,42 @@ func ErrorHandler(ctx context.Context, task *asynq.Task, err error) {
 	}
 
 	log.Errorf("handling queue task failed: %v\n", err)
+
+	if task.Type == "pipe:handle" && saveFailed != "" {
+		p, data, err2 := parsePayload(task)
+
+		if err2 != nil {
+			log.Errorf("saving failed task failed: %v", err2)
+			return
+		}
+
+		combined := struct {
+			Pipe  pipe.Pipe
+			Data  db.Data
+			Error string
+		}{
+			p, data, err.Error(),
+		}
+
+		encoded, err := json.MarshalIndent(combined, "", " ")
+		if err != nil {
+			log.Errorf("saving failed task failed: %v", err)
+			return
+		}
+
+		tmpfile, err := ioutil.TempFile(saveFailed, "failed-")
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		defer tmpfile.Close()
+
+		if _, err := tmpfile.Write(encoded); err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		log.Info("saved failed task to", tmpfile.Name())
+	}
 }

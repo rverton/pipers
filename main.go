@@ -38,6 +38,7 @@ func main() {
 	single := flag.String("single", "", "path of a single pipe to execute")
 	blacklist := flag.String("blacklist", "./resources/ips-exclude.txt", "file of IPs to exclude")
 	noDb := flag.Bool("noDb", false, "do not use a database, read from stdin and print results")
+	saveFailed := flag.String("saveFailed", "", "folder where failed tasks should be saved")
 	flag.Parse()
 
 	if os.Getenv("SLACK_WEBHOOK") != "" {
@@ -92,8 +93,12 @@ func main() {
 		}
 	case *workerMode:
 		log.Info("starting worker")
-		startWorker(pipes, ro, ds)
+		startWorker(pipes, ro, ds, *saveFailed)
 	default:
+		if *saveFailed != "" {
+			log.Warn("the saveFailed flag only works in the worker mode")
+		}
+
 		log.Info("starting scheduler")
 		if err := scheduler(pipes, ro, ds); err != nil {
 			log.Error(err)
@@ -126,7 +131,7 @@ func process(pipes []pipe.Pipe, ds db.DataService) error {
 
 // worker will use asynq and redis to listen for pipe tasks to be handled
 // a server is started for each pipe with a specific queue
-func startWorker(pipes []pipe.Pipe, ro asynq.RedisClientOpt, ds db.DataService) {
+func startWorker(pipes []pipe.Pipe, ro asynq.RedisClientOpt, ds db.DataService, saveFailed string) {
 	var wg sync.WaitGroup
 
 	for _, p := range pipes {
@@ -137,9 +142,11 @@ func startWorker(pipes []pipe.Pipe, ro asynq.RedisClientOpt, ds db.DataService) 
 		log.WithFields(log.Fields{"pipe": p.Name, "worker": p.Worker}).Debug("starting queue")
 
 		srv := asynq.NewServer(ro, asynq.Config{
-			Concurrency:  p.Worker,
-			ErrorHandler: asynq.ErrorHandlerFunc(queue.ErrorHandler),
-			Logger:       log.StandardLogger(),
+			Concurrency: p.Worker,
+			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
+				queue.ErrorHandler(ctx, task, err, saveFailed)
+			}),
+			Logger: log.StandardLogger(),
 			Queues: map[string]int{
 				p.Name: 1,
 			},
