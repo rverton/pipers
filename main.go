@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"os"
 	"sync"
 
@@ -38,7 +41,9 @@ func main() {
 	single := flag.String("single", "", "path of a single pipe to execute")
 	blacklist := flag.String("blacklist", "./resources/ips-exclude.txt", "file of IPs to exclude")
 	noDb := flag.Bool("noDb", false, "do not use a database, read from stdin and print results")
+	stdin := flag.Bool("stdin", false, "read from stdin")
 	saveFailed := flag.String("saveFailed", "", "folder where failed tasks should be saved")
+	replay := flag.String("replay", "", "replay a failed task")
 	flag.Parse()
 
 	if os.Getenv("SLACK_WEBHOOK") != "" {
@@ -86,19 +91,20 @@ func main() {
 	}
 
 	switch {
-	case *noDb:
-		log.Info("database-less mode, reading from stdin")
+	case *stdin:
+		log.Info("reading data from stdin")
 		if err := process(pipes, ds); err != nil {
 			log.Error(err)
 		}
 	case *workerMode:
 		log.Info("starting worker")
 		startWorker(pipes, ro, ds, *saveFailed)
-	default:
-		if *saveFailed != "" {
-			log.Warn("the saveFailed flag only works in the worker mode")
+	case *replay != "":
+		log.Info("replaying task")
+		if err := replayTask(*replay, ds); err != nil {
+			log.Error(err)
 		}
-
+	default:
 		log.Info("starting scheduler")
 		if err := scheduler(pipes, ro, ds); err != nil {
 			log.Error(err)
@@ -107,6 +113,24 @@ func main() {
 
 }
 
+func replayTask(filename string, ds db.DataService) error {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	var tf queue.TaskFailed
+
+	if err := json.Unmarshal(data, &tf); err != nil {
+		return err
+	}
+
+	if err := pipe.Process(context.Background(), tf.Pipe, tf.Data, ds); err != nil {
+		return fmt.Errorf("task processing failed: %v", err)
+	}
+
+	return nil
+}
 func process(pipes []pipe.Pipe, ds db.DataService) error {
 
 	scanner := bufio.NewScanner(os.Stdin)

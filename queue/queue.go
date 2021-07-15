@@ -17,6 +17,12 @@ import (
 const TASK_PIPE = "pipe:handle"
 const TASK_LOCK = time.Hour * 2
 
+type TaskFailed struct {
+	Pipe  pipe.Pipe
+	Data  db.Data
+	Error string
+}
+
 func EnqueuePipe(p pipe.Pipe, data db.Data, client *asynq.Client) error {
 	m := make(map[string]interface{})
 
@@ -134,11 +140,7 @@ func ErrorHandler(ctx context.Context, task *asynq.Task, err error, saveFailed s
 			return
 		}
 
-		combined := struct {
-			Pipe  pipe.Pipe
-			Data  db.Data
-			Error string
-		}{
+		combined := TaskFailed{
 			p, data, err.Error(),
 		}
 
